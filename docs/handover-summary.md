@@ -509,6 +509,8 @@ Week 18 已完成，当前阶段明确为**个人使用版本**，暂不进入�
 - `planning-app/docs/architecture/offline-sync.md`：离线同步架构。
 - `planning-app/docs/architecture/multi-device-sync.md`：多端同步架构。
 - `kimiRULES.txt`：开发规则。
+- `planning-app/docs/testing-phase.md`：测试阶段构建产物、测试方法、观察指标与 Week 27 构建修复记录。
+- `planning-app/docs/testing-plan.md`：Week 27 个人使用版详细测试计划（用例、执行清单、缺陷模板、通过标准）。
 
 ---
 

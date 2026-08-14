@@ -1187,3 +1187,29 @@ Windows 桌面版日志输出方式：
 - `planning-app/releases/planning-app-week27.apk`
 - `planning-app/releases/windows/`
 - 测试日志：`app.log`（Android 用 `adb logcat`，Windows 用命令行重定向）
+
+
+### 测试账号
+
+已在生产服务器 `xutaostudy.xyz` 上创建公用测试账号，可直接用于 Android / Windows 客户端登录：
+
+| 字段 | 值 |
+|------|-----|
+| 邮箱 | `planning-test@example.com` |
+| 密码 | `Test@123456` |
+
+> ⚠️ 注意：该账号为公开测试账号，任何人都可以看到密码。请勿在测试中录入真实个人信息。测试完成后如需保留个人数据，建议在应用内「设置」或调用 `PATCH /users/me/preferences` 后修改密码，或在注册页面自行创建新账号。
+
+测试账号注册/登录 API 示例：
+
+```bash
+# 登录（获取 accessToken / refreshToken）
+curl -s -X POST https://xutaostudy.xyz/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"planning-test@example.com","password":"Test@123456"}'
+
+# 如账号失效，可自行注册新账号（密码不少于 8 位）
+curl -s -X POST https://xutaostudy.xyz/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"your-email@example.com","password":"YourPassword123"}'
+```

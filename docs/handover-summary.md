@@ -169,12 +169,12 @@
 | Reminder | 已应用 | 提醒 |
 | PlanVersion | 已应用 | AI 草案版本 |
 | AISession / AIOperation | 已应用 | AI 调用审计；AIOperation 含 `sessionId` 关联会话 |
-| AIMessage | **代码已写，未部署迁移** | Week 27 新增，保存多轮对话历史 |
+| AIMessage | 已应用 | Week 27 新增，保存多轮对话历史 |
 | Review | 已应用 | 复盘 |
 | UserEvent | 已应用 | 行为埋点 |
 | **SyncEvent** | 已应用 | 多端同步事件表，迁移已部署 |
 | **UserProfileSnapshot** | 已应用 | Week 24 新增，用于缓存用户画像摘要与刷新时间 |
-| User.fcmToken | **代码已写，未部署迁移** | Week 27 新增，保存 Flutter FCM Token |
+| User.fcmToken | 已应用 | Week 27 新增，保存 Flutter FCM Token |
 
 ---
 
@@ -272,50 +272,47 @@
 
 > 本章节记录服务器最近一次确认状态，compact 后恢复上下文时以本记录为准，并再用命令复核。
 
-- **记录时间**：2026-08-14 15:20 CST（Week 27 开发完成后）
+- **记录时间**：2026-08-14 18:25 CST（Week 27 部署完成后）
 - **systemd 服务**：`planning-api.service`
-  - 状态：`active (running)`（基于 Week 21 部署版本，**Week 27 改动尚未部署**）
+  - 状态：`active (running)`（基于 Week 27 部署版本）
   - 自启：`enabled`
   - **重要变更**：服务文件使用 `EnvironmentFile=/opt/planning-app/.env`；已配置 DeepSeek 真实模型 key、日费用上限 `AI_DAILY_COST_LIMIT_USD=1.0`，以及 `AI_CHEAP_MODEL=deepseek-v4-flash`、`AI_STRONG_MODEL=deepseek-reasoner`。
-  - **Week 27 新增环境变量（部署前需补充）**：
+  - **Week 27 新增环境变量（可选）**：
     - `GOOGLE_APPLICATION_CREDENTIALS_JSON`：FCM 服务账号 JSON 私钥压缩为一行，未配置时 FCM 降级为日志。
 - **Nginx 服务**：`nginx.service`
   - 状态：`active (running)`
   - 自启：`enabled`
-  - **重要变更**：修复 `cdn.sta1n.cn` 上游启动失败问题；新增 `/api/v1/` 与 `/sync` 反向代理到 `127.0.0.1:3001`。
+  - 反向代理 `/api/v1/` 与 `/sync` 到 `127.0.0.1:3001`。
 - **监听端口**：
   - `0.0.0.0:80`、`0.0.0.0:443`（Nginx）
   - `*:3001`（planning-api）
 - **健康检查**：
-  - `GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok","service":"planning-app-api","version":"0.0.1"}`
-  - `GET http://127.0.0.1:3001/api/v1/health` → ok
+  - `GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok","service":"planning-app-api","version":"0.0.1"}` ✅
+  - `GET https://xutaostudy.xyz/api/v1/metrics` → Prometheus 指标正常 ✅
 - **数据库容器**：
-  - `planning-app-postgres`：up 30+ 小时，健康
-  - `planning-app-redis`：up 30+ 小时，健康
+  - `planning-app-postgres`：up，健康
+  - `planning-app-redis`：up，健康
 - **已应用迁移**（`npx prisma migrate status` 确认 up to date）：
   - `20260811131033_init`
   - `20260811135523_add_review_goal_id`
   - `20260811135920_make_plan_version_goal_optional`
-  - `20260812072438_add_sync_event`
   - `20260812181431_add_plan_duration_stages`
   - `20260812215500_add_inbox_item`
-  - `20260813083000_add_social`
-  - `20260814083000_add_external_integration`
   - `20260813190000_add_performance_indexes_and_ai_summary`
   - `20260813200000_add_user_profile_snapshot`
-- **Node modules**：Week 21 部署后已重新 `npm install`；`bcrypt` 已 `npm rebuild --build-from-source`。
-- **代码版本**：基于 2026-08-13 Week 21 本地代码 tar + scp 到 `/opt/planning-app`。**Week 27 代码仍在本地，未上传服务器**。
-- **待部署清单**：
-  1. 打包并上传 Week 27 本地代码到 `/opt/planning-app`。
-  2. 在服务器执行 `npm install` 安装新依赖（`firebase-admin` 等）。
-  3. 在 `/opt/planning-app/.env` 补充 `GOOGLE_APPLICATION_CREDENTIALS_JSON`（可选）。
-  4. 执行 `npx prisma migrate dev --name add_fcm_and_ai_session` 生成并应用迁移（或先在本地有数据库环境生成 SQL 后上传）。
-  5. 执行 `npx prisma generate` 与 `npm run build`。
-  6. 重启 `planning-api.service`。
-  7. 重新部署 Flutter 应用并配置 Firebase 原生文件（`google-services.json` 等）。
+  - `20260814083000_add_external_integration`
+  - `20260816000000_add_calendar_subscription`
+  - `20260814180100_add_fcm_and_ai_message`（Week 27 新增）
+- **数据库表/字段确认**：
+  - `users.fcmToken` 字段已存在 ✅
+  - `ai_messages` 表已创建 ✅
+- **Node modules**：Week 27 部署后已重新 `npm install`；新增 `firebase-admin` 等依赖。
+- **代码版本**：基于 2026-08-14 Week 27 本地代码 tar + scp 到 `/opt/planning-app`，本地构建 `dist` 上传到 `/opt/planning-app/services/api/dist` 后重启服务。
+- **备份**：`/opt/planning-app-backup-week21` 保留 Week 21 代码备份。
 - **AI 运行状态**：
   - 模型：`deepseek-v4-flash`，baseURL `https://api.deepseek.com/v1`。
   - 已验证真实 AI 生成计划、复盘、重新规划均成功。
+- **部署方式**：因服务器单核 ECS 直接 `nest build` 会压死 SSH，本次采用**本地构建后上传 `dist/`** 的方式部署。
 - **Week 13 业务验证**：
   - `GET https://xutaostudy.xyz/api/v1/health` 正常。
   - `POST /api/v1/reminders` 创建提醒成功。
@@ -390,6 +387,9 @@
 3. **screen 会话丢失**：尝试通过 `screen -S` 控制远端会话时找不到 socket；最终改用 **systemd** 服务管理 `planning-api`。
 4. **本地无数据库**：Windows 不支持 Docker 虚拟化，导致 `prisma migrate dev` 无法在本地执行，必须在服务器上跑 `npx prisma migrate deploy`。
 5. **服务器 `nest build` 只生成 `.d.ts`**：删除 `dist/` 与 `tsconfig.tsbuildinfo` 后重新构建可解决。
+6. **服务器单核 ECS 直接 `nest build` 会压死 SSH 导致无响应**：Week 27 起改为 **本地构建 `dist/` 后上传服务器** 部署。
+7. **服务器 `/opt/planning-app/services/api/.env` 旧模板文件导致 Prisma 认证失败**：删除或重命名该文件，统一使用 `/opt/planning-app/.env`；执行 Prisma CLI 前确保工作目录能读取正确 `.env`。
+8. **服务器重启后 `dist/` 目录缺失导致服务启动失败**：Week 27 部署过程中因源码包不含 `dist/` 且服务器 build 被中断，导致服务无法启动；需确保上传本地构建产物后再启动服务。
 
 ### 5.5 服务器快速检查命令
 
@@ -854,3 +854,82 @@ Week 18 完成后，原计划进入 **Week 19 商业化**（订阅/团队版/数
 - **本地无数据库**，`prisma migrate dev` 必须在服务器执行。
 - **服务器数据库**：PostgreSQL 15 运行中，当前已应用迁移至 `20260816000000_add_calendar_subscription`。
 - **服务器构建方式**：当前 ECS 单核 `nest build` 会压死 SSH，改为本地构建后上传 `dist/`。
+
+
+---
+
+## 16. 2026-08-14 Week 27 部署记录
+
+### 部署内容
+
+- 后端：FCM 真实推送（`fcm.service.ts`、`POST /users/me/fcm-token`）、Prometheus 指标 `/metrics`、用户行为埋点 `UserEvent` 落库、`AISession`/`AIMessage` 多轮对话上下文。
+- Flutter：FCM 服务初始化与 Token 上传、AI 计划页「继续对话」、Inbox/Calendar 本地优先离线同步、日历订阅自动刷新、SyncEngine 失败重试。
+
+### 本地验证
+
+- `npm run test`：21 suites / 99 tests 全部通过。
+- `npm run lint`：通过。
+- `npm run build`：通过。
+- `flutter analyze`：No issues found。
+
+### 服务器部署步骤
+
+1. 本地打包（排除 `node_modules` / `.git` / `dist` / `build` / `tools/flutter`）：
+   `tar --exclude=node_modules --exclude=.git --exclude=dist --exclude=build --exclude=tools/flutter -czf planning-app-week27.tar.gz planning-app`
+2. 上传到服务器：`scp planning-app-week27.tar.gz root@xutaostudy.xyz:/tmp/`
+3. 服务器备份当前代码：`cp -r /opt/planning-app /opt/planning-app-backup-week21`
+4. 解压覆盖，保留 `/opt/planning-app/.env`：
+   ```bash
+   cp /opt/planning-app/.env /opt/planning-app/.env.week21-backup
+   cd /opt/planning-app && tar -xzf /tmp/planning-app-week27.tar.gz --overwrite
+   cp /opt/planning-app/.env.week21-backup /opt/planning-app/.env
+   ```
+5. 安装依赖：`cd /opt/planning-app/services/api && npm install`
+6. 处理旧 `.env` 冲突：重命名 `/opt/planning-app/services/api/.env` 为 `.env.template.bak`，避免 Prisma CLI 读取错误的数据库密码。
+7. 生成并应用迁移：
+   ```bash
+   cd /opt/planning-app
+   export DATABASE_URL=$(grep DATABASE_URL .env | cut -d= -f2-)
+   MIGRATION_DIR=services/api/prisma/migrations/20260814180100_add_fcm_and_ai_message
+   mkdir -p "$MIGRATION_DIR"
+   npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel services/api/prisma/schema.prisma --script > "$MIGRATION_DIR/migration.sql"
+   npx prisma migrate deploy --schema services/api/prisma/schema.prisma
+   npx prisma generate --schema services/api/prisma/schema.prisma
+   ```
+8. 构建：由于服务器单核 ECS 直接 `nest build` 会压死 SSH，改为**本地构建后上传 `dist/`**：
+   ```bash
+   # 本地
+   cd planning-app/services/api
+   rm -rf dist tsconfig.tsbuildinfo
+   npm run build
+   tar -czf /tmp/api-dist-week27.tar.gz dist
+   scp /tmp/api-dist-week27.tar.gz root@xutaostudy.xyz:/tmp/
+   ```
+9. 服务器替换 `dist/` 并重启服务：
+   ```bash
+   cd /opt/planning-app/services/api
+   rm -rf dist
+   tar -xzf /tmp/api-dist-week27.tar.gz
+   systemctl restart planning-api.service
+   ```
+10. 健康检查：`curl -s http://127.0.0.1:3001/api/v1/health` → ok
+
+### 服务器部署后验证
+
+- 部署时间：2026-08-14 18:22 CST。
+- `GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok","service":"planning-app-api","version":"0.0.1"}` ✅
+- `GET https://xutaostudy.xyz/api/v1/metrics` → Prometheus 指标正常 ✅
+- `POST https://xutaostudy.xyz/api/v1/users/me/fcm-token` → `401 Unauthorized`（路由已注册）✅
+- `POST https://xutaostudy.xyz/api/v1/analytics/events` → `401 Unauthorized`（路由已注册）✅
+- `POST https://xutaostudy.xyz/api/v1/ai/plan-drafts/stream` → `401 Unauthorized`（路由已注册）✅
+- `npx prisma migrate status` → `Database schema is up to date!` ✅
+- `users.fcmToken` 字段已创建 ✅
+- `ai_messages` 表已创建 ✅
+
+### 踩坑记录
+
+- 服务器 `/opt/planning-app/services/api/.env` 是旧模板文件，会导致 `npx prisma migrate dev` 读取错误的数据库密码；删除/重命名后统一使用 `/opt/planning-app/.env`。
+- `npx prisma migrate deploy` 不会自动加载 `.env`，需先导出 `DATABASE_URL` 或在项目根目录执行。
+- 服务器单核 ECS 直接 `nest build` 会压死 SSH 导致无响应，本次采用本地构建 `dist/` 后上传的方式。
+- 服务器重启后发现 `dist/` 目录缺失，导致 `planning-api.service` 反复启动失败；需确保上传本地构建产物后再启动服务。
+- `prisma migrate dev` 在非交互环境下不支持，使用 `prisma migrate diff` + `prisma migrate deploy` 组合完成迁移。

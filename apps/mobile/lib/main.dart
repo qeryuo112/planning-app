@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
 import 'screens/login_screen.dart';
@@ -9,6 +11,13 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Windows/Linux/macOS 桌面端使用 sqflite FFI 实现本地数据库
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   await NotificationService().initialize();
   // 初始化 Firebase 与远程推送；若未配置 Firebase 原生文件会优雅降级。
   await FcmService().initialize();

@@ -1213,3 +1213,24 @@ curl -s -X POST https://xutaostudy.xyz/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"your-email@example.com","password":"YourPassword123"}'
 ```
+
+
+## 测试阶段构建修复记录（Week 27 产物）
+
+本次测试阶段修复了 Android Release APK 与 Windows Release 包的构建问题，并重新生成了发布产物。
+
+### 修复内容
+
+1. **Android 构建：`sqlite3` 包默认下载 GitHub 预编译库超时**   - 在 `apps/mobile/pubspec.yaml` 中加入 `sqlite3_flutter_libs: ^0.5.0` 提供本地预编译库。   - 添加 `hooks.user_defines.sqlite3.source: system`，避免 `sqlite3` 构建钩子从 GitHub 下载 `libsqlite3.arm64.android.so`。
+2. **Android 插件 compileSdk 版本冲突**   - 主项目 `android/app/build.gradle.kts` 将 `compileSdk` 显式设置为 `36`。   - 在 `android/build.gradle.kts` 中通过 `allprojects.afterEvaluate` 统一把所有 Android 子项目（包括 `health` 等第三方插件）的 `compileSdk` 强制设置为 `36`，避免 `:health` 等插件仍编译在 `android-34` 导致 `checkReleaseAarMetadata` 失败。
+3. **Windows 构建：CMake 4.x 移除对 `<3.5` 的兼容**   - 在 `windows/CMakeLists.txt` 顶部加入 `set(CMAKE_POLICY_VERSION_MINIMUM 3.5)`，解决 `firebase_cpp_sdk_windows` 中 `cmake_minimum_required(VERSION 2.8)` 被 CMake 4.x 拒绝的问题。
+4. **Windows 安装路径修正**   - 将 `windows/CMakeLists.txt` 中 `BUILD_BUNDLE_DIR` 从生成器表达式改为实际路径 `${PROJECT_BINARY_DIR}/runner/Release`，并强制 `CMAKE_INSTALL_PREFIX` 指向该目录，避免 `INSTALL` 目标把文件写入 `C:/Program Files/planning_app_mobile/`。
+
+### 构建产物
+
+- Android APK：`planning-app/releases/planning-app-week27.apk`（约 61.4 MB）   - 构建命令：`flutter build apk --release`- Windows 桌面包：`planning-app/releases/windows/`（约 28 MB）   - 构建命令：`flutter build windows --release`   - 运行方式：复制整个 `releases/windows/` 目录到目标机器，双击 `planning_app_mobile.exe`。
+
+### 已知警告（不影响当前功能）
+
+- `health`、`device_info_plus` 等插件仍使用 Kotlin Gradle Plugin（KGP），Flutter 未来版本可能强制要求迁移到 Built-in Kotlin。当前构建为警告，不影响 APK/EXE 生成。
+- Windows 构建出现 `MSVCRT.lib(ehvecdtr.obj) : warning LNK4078` 与 CMake 弃用警告，属于 Firebase C++ SDK 与新版 CMake 的兼容性提示，生成的 exe 可正常启动。

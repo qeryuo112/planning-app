@@ -16,6 +16,8 @@ dependencies:
   intl: ^0.19.0
   logger: ^2.0.2+1
   sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.4.2
+  sqlite3_flutter_libs: ^0.5.0
   path: ^1.8.3
   socket_io_client: ^2.0.3+1
   uuid: ^4.2.2
@@ -36,3 +38,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+

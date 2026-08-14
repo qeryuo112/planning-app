@@ -1,0 +1,51 @@
+groups:
+  - name: planning_app_api
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (method, route) (rate(api_errors_total[5m]))
+            /
+            sum by (method, route) (rate(http_request_duration_seconds_count[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 错误率偏高"
+          description: "{{ $labels.method }} {{ $labels.route }} 错误率超过 1%（持续 5 分钟）"
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, method, route) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API P99 延迟偏高"
+          description: "{{ $labels.method }} {{ $labels.route }} P99 延迟超过 2 秒（持续 5 分钟）"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "计划型 App API 不可用"
+          description: "Prometheus 无法抓取目标，服务可能已宕机"
+
+      - alert: AIFallbackRateHigh
+        expr: |
+          (
+            sum by (operation) (rate(ai_calls_total{fallback="true"}[15m]))
+            /
+            sum by (operation) (rate(ai_calls_total[15m]))
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 降级率偏高"
+          description: "{{ $labels.operation }} 操作超过 50% 触发降级（持续 10 分钟）"

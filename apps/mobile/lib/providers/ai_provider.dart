@@ -45,6 +45,8 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     String? templateId,
     int planDuration = 7,
     int stageLength = 7,
+    String? sessionId,
+    String? followUp,
   }) async {
     state = const AsyncValue.loading();
     try {
@@ -54,6 +56,8 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
         if (templateId != null) 'templateId': templateId,
         'planDuration': planDuration,
         'stageLength': stageLength,
+        if (sessionId != null) 'sessionId': sessionId,
+        if (followUp != null) 'followUp': followUp,
       });
       state = AsyncValue.data(res as Map<String, dynamic>);
     } catch (e, st) {
@@ -69,6 +73,8 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     String? templateId,
     int planDuration = 7,
     int stageLength = 7,
+    String? sessionId,
+    String? followUp,
   }) async* {
     state = const AsyncValue.loading();
 
@@ -78,6 +84,8 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
       if (templateId != null) 'templateId': templateId,
       'planDuration': planDuration,
       'stageLength': stageLength,
+      if (sessionId != null) 'sessionId': sessionId,
+      if (followUp != null) 'followUp': followUp,
     });
 
     final draftId = (initRes as Map<String, dynamic>)['draftId'] as String?;

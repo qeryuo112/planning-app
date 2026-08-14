@@ -2,9 +2,16 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { PrismaClient } from "@prisma/client";
 import { GoalsService } from "./goals.service";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
 
 const mockSyncEvents = {
   createEvent: jest.fn().mockResolvedValue({ id: "e1" }),
+};
+
+const mockAnalytics = {
+  track: jest.fn().mockResolvedValue({ id: "e1" }),
+  trackBatch: jest.fn().mockResolvedValue({ count: 0 }),
+  findEvents: jest.fn().mockResolvedValue([]),
 };
 
 const mockPrisma = {
@@ -30,6 +37,7 @@ describe("GoalsService", () => {
         GoalsService,
         { provide: PrismaClient, useValue: mockPrisma },
         { provide: SyncEventsService, useValue: mockSyncEvents },
+        { provide: AnalyticsService, useValue: mockAnalytics },
       ],
     }).compile();
 

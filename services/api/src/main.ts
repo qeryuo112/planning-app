@@ -4,6 +4,8 @@ import { ValidationPipe, VersioningType } from "@nestjs/common";
 import { Logger, LoggerErrorInterceptor } from "nestjs-pino";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { MetricsService } from "./modules/metrics/metrics.service";
+import { MetricsInterceptor } from "./modules/metrics/metrics.interceptor";
 
 /**
  * 应用入口
@@ -26,6 +28,11 @@ async function bootstrap() {
 
   // 全局异常日志拦截
   app.useGlobalInterceptors(new LoggerErrorInterceptor());
+
+  // 全局 Prometheus 指标拦截（请求延迟与响应状态）
+  app.useGlobalInterceptors(
+    new MetricsInterceptor(app.get(MetricsService)),
+  );
 
   // API 版本前缀 /api/v1
   app.setGlobalPrefix("api");

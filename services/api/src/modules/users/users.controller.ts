@@ -1,10 +1,17 @@
-import { Body, Controller, Get, Patch } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+} from "@nestjs/common";
 import {
   CurrentUser,
   CurrentUserPayload,
 } from "../../common/decorators/current-user.decorator";
 import { UsersService } from "./users.service";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
+import { UpdateFcmTokenDto } from "./dto/update-fcm-token.dto";
 
 @Controller("users")
 export class UsersController {
@@ -21,5 +28,16 @@ export class UsersController {
     @Body() dto: UpdatePreferencesDto,
   ) {
     return this.usersService.updatePreferences(user.userId, dto);
+  }
+
+  @Post("me/fcm-token")
+  updateFcmToken(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: UpdateFcmTokenDto,
+  ) {
+    if (!dto.token || dto.token.trim().length === 0) {
+      return this.usersService.clearFcmToken(user.userId);
+    }
+    return this.usersService.updateFcmToken(user.userId, dto.token.trim());
   }
 }

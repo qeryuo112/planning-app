@@ -4,6 +4,7 @@ import { CreateHabitDto } from "./dto/create-habit.dto";
 import { UpdateHabitDto } from "./dto/update-habit.dto";
 import { HabitCheckinDto } from "./dto/habit-checkin.dto";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
 import { emitReportCacheInvalidation } from "../../common/events/report-cache.events";
 
 /**
@@ -17,6 +18,7 @@ export class HabitsService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly syncEvents: SyncEventsService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async create(userId: string, dto: CreateHabitDto) {
@@ -49,6 +51,17 @@ export class HabitsService {
       payload: {
         title: habit.title,
         frequency: habit.frequency,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "habit.created",
+      targetId: habit.id,
+      metadata: {
+        title: habit.title,
+        frequency: habit.frequency,
+        energyLevel: habit.energyLevel,
       },
     });
 
@@ -154,6 +167,18 @@ export class HabitsService {
       targetId: id,
       payload: {
         result: checkin.result,
+        date: checkin.date.toISOString(),
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "habit.checkin",
+      targetId: id,
+      metadata: {
+        result: checkin.result,
+        actualMinutes: dto.actualMinutes,
+        qualityRating: dto.qualityRating,
         date: checkin.date.toISOString(),
       },
     });

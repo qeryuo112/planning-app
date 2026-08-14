@@ -139,6 +139,13 @@
 - [x] **Week 26 新增**：Android 精确闹钟权限 `USE_EXACT_ALARM` 声明与 `PlatformException` 错误提示
 - [x] **Week 26 新增**：Health Connect 同步失败 UI 回退（警告卡片 + 改用 JSON 导入）
 - [x] **Week 26 新增**：日历订阅弹窗下拉刷新
+- [x] **Week 27 新增**：FCM 真实推送后端（`fcm.service.ts`、`POST /users/me/fcm-token`）
+- [x] **Week 27 新增**：服务端监控指标 `/metrics`（Prometheus 格式）
+- [x] **Week 27 新增**：`UserEvent` 行为埋点落库与客户端 `POST /analytics/events` 批量接口
+- [x] **Week 27 新增**：`AISession`/`AIMessage` 多轮对话上下文，`createDraft`/`replan`/`review` 支持 `sessionId`/`followUp`
+- [x] **Week 27 新增**：Flutter `FcmService` 初始化、Token 上传/刷新/后台消息监听（未配置 Firebase 时优雅降级）
+- [x] **Week 27 新增**：Flutter AI 计划页「继续对话」入口与消息气泡列表
+- [x] **Week 27 新增**：Flutter 关键页面埋点（登录/今日/任务完成/习惯打卡/AI 生成与确认）
 
 ### 3.2 已生成数据模型
 
@@ -158,11 +165,13 @@
 | Checkin | 已应用 | 任务/习惯打卡 |
 | Reminder | 已应用 | 提醒 |
 | PlanVersion | 已应用 | AI 草案版本 |
-| AISession / AIOperation | 已应用 | AI 调用审计 |
+| AISession / AIOperation | 已应用 | AI 调用审计；AIOperation 含 `sessionId` 关联会话 |
+| AIMessage | **代码已写，未部署迁移** | Week 27 新增，保存多轮对话历史 |
 | Review | 已应用 | 复盘 |
 | UserEvent | 已应用 | 行为埋点 |
 | **SyncEvent** | 已应用 | 多端同步事件表，迁移已部署 |
-| **UserProfileSnapshot** | **代码已写，未部署迁移** | Week 24 新增，用于缓存用户画像摘要与刷新时间 |
+| **UserProfileSnapshot** | 已应用 | Week 24 新增，用于缓存用户画像摘要与刷新时间 |
+| User.fcmToken | **代码已写，未部署迁移** | Week 27 新增，保存 Flutter FCM Token |
 
 ---
 
@@ -235,17 +244,17 @@
 
 - **工作目录**：`C:/Users/Administrator/Desktop/666/`
 - **项目目录**：`C:/Users/Administrator/Desktop/666/planning-app/`
-- **版本控制**：`planning-app/` 下 **没有 `.git` 仓库**，只有 `.gitignore`。代码通过 tar 包方式同步到服务器。
+- **版本控制**：`planning-app/` 下已初始化 Git 仓库（`main` 分支），首笔 commit `630547f`。`tools/flutter` 已排除在 index 外。
 - **Node.js**：v24.16.0 / npm 11.13.0（根据开发日志，需确认）
 - **Docker**：本地不支持虚拟化，无法运行 Docker Desktop / Docker 引擎。
-- **Flutter**：已安装，路径 `C:/Users/Administrator/flutter`，命令 `/c/Users/Administrator/flutter/bin/flutter`，`flutter analyze` 通过。
-- **本地验证结果**：
-  - `npm run build`：通过
-  - `npm run test`：83 个测试全部通过（18 suites）
+- **Flutter**：已安装，路径 `C:/Users/Administrator/flutter`，命令 `C:/Users/Administrator/flutter/bin/flutter`，`flutter analyze` 通过。
+- **本地验证结果**（最近一次 Week 27）：
+  - `npm run build -w services/api`：通过
+  - `npm run test -w services/api`：21 个测试套件，99 个测试全部通过
   - `npm run lint`：通过
-  - `prisma generate`：通过
-  - `prisma migrate dev`：**无法执行**（无本地数据库，迁移在服务器执行）
-  - `flutter analyze`：通过
+  - `npx prisma generate`：通过
+  - `npx prisma migrate dev`：**无法执行**（无本地数据库，迁移在服务器执行）
+  - `flutter analyze`：No issues found
 
 ### 5.2 服务器环境（xutaostudy.xyz）
 
@@ -260,14 +269,13 @@
 
 > 本章节记录服务器最近一次确认状态，compact 后恢复上下文时以本记录为准，并再用命令复核。
 
-- **记录时间**：2026-08-13 20:50 CST
+- **记录时间**：2026-08-14 15:20 CST（Week 27 开发完成后）
 - **systemd 服务**：`planning-api.service`
-  - 状态：`active (running)`
+  - 状态：`active (running)`（基于 Week 21 部署版本，**Week 27 改动尚未部署**）
   - 自启：`enabled`
-  - 主进程 PID：由 systemd 自动管理
-  - 启动时间：2026-08-13 19:42 CST（Week 21 部署后重启）
-  - **重要变更**：服务文件使用 `EnvironmentFile=/opt/planning-app/.env`；已配置 DeepSeek 真实模型 key、日费用上限 `AI_DAILY_COST_LIMIT_USD=1.0`，以及 Week 14 新增 `AI_CHEAP_MODEL=deepseek-v4-flash`、`AI_STRONG_MODEL=deepseek-reasoner`。
-  - **Week 14 新增**：需在 `/opt/planning-app/.env` 中补充 `AI_CHEAP_MODEL` 与 `AI_STRONG_MODEL`（未配置时回退到 `OPENAI_MODEL`）。
+  - **重要变更**：服务文件使用 `EnvironmentFile=/opt/planning-app/.env`；已配置 DeepSeek 真实模型 key、日费用上限 `AI_DAILY_COST_LIMIT_USD=1.0`，以及 `AI_CHEAP_MODEL=deepseek-v4-flash`、`AI_STRONG_MODEL=deepseek-reasoner`。
+  - **Week 27 新增环境变量（部署前需补充）**：
+    - `GOOGLE_APPLICATION_CREDENTIALS_JSON`：FCM 服务账号 JSON 私钥压缩为一行，未配置时 FCM 降级为日志。
 - **Nginx 服务**：`nginx.service`
   - 状态：`active (running)`
   - 自启：`enabled`
@@ -293,7 +301,15 @@
   - `20260813190000_add_performance_indexes_and_ai_summary`
   - `20260813200000_add_user_profile_snapshot`
 - **Node modules**：Week 21 部署后已重新 `npm install`；`bcrypt` 已 `npm rebuild --build-from-source`。
-- **代码版本**：基于 2026-08-13 Week 21 本地代码 tar + scp 到 `/opt/planning-app`。
+- **代码版本**：基于 2026-08-13 Week 21 本地代码 tar + scp 到 `/opt/planning-app`。**Week 27 代码仍在本地，未上传服务器**。
+- **待部署清单**：
+  1. 打包并上传 Week 27 本地代码到 `/opt/planning-app`。
+  2. 在服务器执行 `npm install` 安装新依赖（`firebase-admin` 等）。
+  3. 在 `/opt/planning-app/.env` 补充 `GOOGLE_APPLICATION_CREDENTIALS_JSON`（可选）。
+  4. 执行 `npx prisma migrate dev --name add_fcm_and_ai_session` 生成并应用迁移（或先在本地有数据库环境生成 SQL 后上传）。
+  5. 执行 `npx prisma generate` 与 `npm run build`。
+  6. 重启 `planning-api.service`。
+  7. 重新部署 Flutter 应用并配置 Firebase 原生文件（`google-services.json` 等）。
 - **AI 运行状态**：
   - 模型：`deepseek-v4-flash`，baseURL `https://api.deepseek.com/v1`。
   - 已验证真实 AI 生成计划、复盘、重新规划均成功。

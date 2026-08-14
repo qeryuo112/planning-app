@@ -3,18 +3,21 @@ import { AiService } from "./ai.service";
 import { AiController } from "./ai.controller";
 import { AiInsightsService } from "./ai-insights.service";
 import { AiCleanupService } from "./ai-cleanup.service";
+import { AiSessionService } from "./ai-session.service";
 import { ModelAdapter } from "./model-adapter.service";
 import { PlanOrchestrator } from "./plan-orchestrator.service";
 import { PlanExecutor } from "./plan-executor.service";
 import { SyncModule } from "../sync/sync.module";
+import { AnalyticsModule } from "../analytics/analytics.module";
 
 @Module({
-  imports: [SyncModule],
+  imports: [SyncModule, AnalyticsModule],
   controllers: [AiController],
   providers: [
     AiService,
     AiInsightsService,
     AiCleanupService,
+    AiSessionService,
     ModelAdapter,
     PlanOrchestrator,
     PlanExecutor,

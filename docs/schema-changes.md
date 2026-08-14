@@ -146,3 +146,63 @@ npx prisma migrate deploy
 - `@prisma/client` 类型需重新生成：`npx prisma generate`。
 - 新增 `SyncEventsService`、`SyncEventsGateway`（`/sync`）、`SyncEventsController`（`GET /sync/events`）。
 - `TasksService` / `HabitsService` / `GoalsService` 在创建/完成/打卡后写入 `SyncEvent` 并广播。
+
+
+## 2026-08-14 Week 27 个人版增强：FCM、AI 会话、客户端埋点
+
+### 变更内容
+
+1. **User 模型新增 `fcmToken`**
+   - 类型：`String?`
+   - 原因：存储 Flutter 上传的 FCM Token，用于远程推送。
+
+2. **新增 `AIMessage` 模型**
+   - 字段：
+     - `id String @id @default(uuid())`
+     - `sessionId String`
+     - `role String`（`system` / `user` / `assistant`）
+     - `content String`
+     - `metadata Json?`
+     - `createdAt DateTime @default(now())`
+   - 索引：`@@index([sessionId, createdAt])`
+   - 关系：`session AISession @relation(fields: [sessionId], references: [id], onDelete: Cascade)`
+
+3. **AIOperation 模型新增 `sessionId`**
+   - 类型：`String?`
+   - 原因：将 AI 操作与多轮会话关联，便于后续成本分析按会话聚合。
+   - 关系：`session AISession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)`
+
+4. **AISession 模型反向关联**
+   - 新增 `messages AIMessage[]`
+
+### 原因
+
+- 支持 AI 多轮对话：用户可在生成计划后继续追问/调整，AI 能读取历史上下文。
+- 支持 FCM 远程推送：服务端 reminders 触发时可通过 Firebase 推送离线通知。
+- 支持客户端行为埋点：记录关键前端事件，用于后续画像、推荐与数据报表。
+
+### 迁移方式
+
+开发环境（需本地有 PostgreSQL）：
+
+```bash
+cd services/api
+npx prisma migrate dev --name add_fcm_and_ai_session
+```
+
+生产环境（服务器已部署）：
+
+```bash
+cd /opt/planning-app/services/api
+npx prisma generate
+npx prisma migrate deploy
+```
+
+> ⚠️ 注意：本次 Week 27 结束时本地无可用 PostgreSQL，因此未生成新的迁移文件。部署前务必先在有数据库环境生成并应用迁移。
+
+### 影响范围
+
+- `@prisma/client` 类型需重新生成：`npx prisma generate`。
+- `AiService.createDraft` / `replan` / `review` 会读写 `AISession` / `AIMessage`。
+- `FcmService` 上传的 Token 由 `UsersService.updateFcmToken` 写入 `User.fcmToken`。
+- `AnalyticsController` 新增 `POST /analytics/events` 与 `POST /analytics/events/batch` 供客户端上报事件。

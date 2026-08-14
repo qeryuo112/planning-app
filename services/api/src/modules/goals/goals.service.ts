@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { CreateGoalDto } from "./dto/create-goal.dto";
 import { UpdateGoalDto } from "./dto/update-goal.dto";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
 import { emitReportCacheInvalidation } from "../../common/events/report-cache.events";
 
 export interface GoalProgress {
@@ -22,6 +23,7 @@ export class GoalsService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly syncEvents: SyncEventsService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async create(userId: string, dto: CreateGoalDto) {
@@ -56,6 +58,17 @@ export class GoalsService {
       payload: {
         title: goal.title,
         horizon: goal.horizon,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "goal.created",
+      targetId: goal.id,
+      metadata: {
+        title: goal.title,
+        horizon: goal.horizon,
+        milestoneCount: milestones.length,
       },
     });
 

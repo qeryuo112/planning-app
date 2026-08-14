@@ -53,6 +53,24 @@ export class UsersService {
     };
   }
 
+  async updateFcmToken(userId: string, token: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken: token },
+      select: { id: true, fcmToken: true },
+    });
+    return { userId: user.id, fcmToken: user.fcmToken };
+  }
+
+  async clearFcmToken(userId: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken: null },
+      select: { id: true, fcmToken: true },
+    });
+    return { userId: user.id, fcmToken: user.fcmToken };
+  }
+
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
     const existing = await this.prisma.user.findUnique({
       where: { id: userId },

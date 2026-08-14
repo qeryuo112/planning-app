@@ -2252,3 +2252,120 @@ Week 9 候选方向：
 - 服务器尚未重新部署本次 Flutter 改动（纯客户端改动，无需服务端部署）。
 - iOS 真机/HealthKit 实测仍需在 macOS + iPhone 环境验证。
 - 后续可继续：服务端监控告警、数据库异地备份、处理 `npm audit` 依赖漏洞。
+
+---
+
+## Week 27：个人版增强 A+B（2026-08-14）
+
+### 目标
+
+1. **A1+A2**：接入真实 FCM 远程推送后端与 Flutter Token 上传。
+2. **A3**：暴露服务端监控指标与 `/metrics` 端点。
+3. **B1**：行为埋点 `UserEvent` 落库。
+4. **B2**：AI 多轮对话上下文（`AISession`/`AIMessage`），`createDraft`/`replan`/`review` 支持 `sessionId`/`followUp`。
+5. **Flutter 体验**：AI 计划页增加「继续对话」入口与消息列表，客户端 `api_client` 增加 `trackEvent` 并接入关键页面。
+
+### 已完成工作
+
+#### 1. 服务端监控指标与 `/metrics`（A3）
+- `services/api/src/modules/metrics/metrics.module.ts`
+- `services/api/src/modules/metrics/metrics.service.ts`
+- `services/api/src/modules/metrics/metrics.controller.ts`
+- 已接入 Prometheus 指标：`http_requests_total`、`ai_operations_total`、`analytics_tracked_total` 等。
+- `/metrics` 端点暴露（无需 JWT，实际部署建议 Nginx 白名单或 Basic Auth）。
+
+#### 2. FCM 真实推送后端（A1）
+- `services/api/src/modules/notifications/notifications.module.ts`
+- `services/api/src/modules/notifications/fcm.service.ts`
+- `services/api/src/modules/notifications/notifications.controller.ts`（测试/触发接口）
+- 依赖 `firebase-admin`，通过 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 环境变量初始化。
+- 个人版未配置 FCM 时优雅降级为日志记录。
+- 新增 `POST /users/me/fcm-token` 保存/清空用户 FCM Token。
+
+#### 3. 行为埋点落库（B1）
+- `services/api/src/modules/analytics/analytics.service.ts` 提供 `track`/`trackBatch`。
+- 写入 `UserEvent` 表，用于后续画像、推荐与报表。
+- 关键后端操作（AI 草案创建/确认/推进、复盘、重新规划）自动触发服务端埋点。
+
+#### 4. AI 多轮对话上下文（B2）
+- `services/api/src/modules/ai/ai-session.service.ts`：会话管理、消息历史、摘要占位。
+- `services/api/src/modules/ai/ai.service.ts`：
+  - `createDraft` 已接入 `AiSessionService`。
+  - `replan` 与 `review` 新增 `sessionId`/`followUp` 参数并接入会话历史。
+- `services/api/src/modules/ai/dto/replan.dto.ts` 与 `dto/review.dto.ts`：新增 `sessionId`/`followUp`。
+- `services/api/src/modules/ai/plan-orchestrator.service.ts`：`generateReplan`/`generateReview` 支持可选 `history` 并在 prompt 中拼接上下文。
+- 后端单元测试 `ai.service.spec.ts` 补充 `AiSessionService` mock 并修正流式生成参数断言。
+
+#### 5. Flutter FCM Token 上传与推送处理（A2）
+- `apps/mobile/pubspec.yaml`：新增 `firebase_core: ^3.0.0`、`firebase_messaging: ^15.0.0`。
+- `apps/mobile/lib/services/fcm_service.dart`：
+  - 初始化 Firebase（未配置时优雅降级）。
+  - 获取并上传 FCM Token 到 `POST /users/me/fcm-token`。
+  - 监听 Token 刷新并重新上传。
+  - 监听前台/后台远程消息。
+- `apps/mobile/lib/main.dart`：启动时初始化 `FcmService`。
+
+#### 6. Flutter 对话 UI 与埋点集成
+- `apps/mobile/lib/providers/ai_provider.dart`：`createDraft`/`createDraftStream` 增加 `sessionId`/`followUp` 参数透传。
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`：
+  - 保存服务端返回的 `sessionId`。
+  - 生成首个草案后展示「继续对话」输入框与消息气泡。
+  - 发送 follow-up 后基于同一 session 重新生成计划。
+- `apps/mobile/lib/services/api_client.dart`：新增 `trackEvent` 与 `trackEvents` 方法，调用 `POST /analytics/events` 与 `/analytics/events/batch`。
+- `services/api/src/modules/analytics/analytics.controller.ts`：新增 `POST /analytics/events` 与 `POST /analytics/events/batch` 客户端埋点端点。
+- `services/api/src/modules/analytics/dto/track-event.dto.ts`：客户端埋点 DTO。
+- 关键页面接入埋点：
+  - `login_screen.dart`：登录/注册成功上报 `user.logged_in`/`user.registered`。
+  - `today_screen.dart`：打开页面上报 `today.view`，完成任务上报 `task.completed`，习惯打卡上报 `habit.checkin`。
+  - `ai_plan_draft_screen.dart`：生成/继续生成/确认草案分别上报 `ai.draft.generated`/`ai.draft.follow_up_generated`/`ai.draft.approved`。
+
+### 本地验证
+- `npm run test -w services/api`：21 个测试套件，99 个测试全部通过。
+- `npm run build -w services/api`：通过。
+- `C:/Users/Administrator/flutter/bin/flutter analyze`：No issues found。
+- `C:/Users/Administrator/flutter/bin/flutter pub get`：依赖解析成功。
+
+### 关键文件
+- 后端：
+  - `services/api/src/modules/metrics/*`
+  - `services/api/src/modules/notifications/*`
+  - `services/api/src/modules/analytics/*`
+  - `services/api/src/modules/ai/ai-session.service.ts`
+  - `services/api/src/modules/ai/ai.service.ts`
+  - `services/api/src/modules/ai/ai.service.spec.ts`
+  - `services/api/src/modules/ai/plan-orchestrator.service.ts`
+  - `services/api/src/modules/ai/dto/replan.dto.ts`
+  - `services/api/src/modules/ai/dto/review.dto.ts`
+  - `services/api/src/modules/users/users.controller.ts`
+  - `services/api/src/modules/users/users.service.ts`
+- Flutter：
+  - `apps/mobile/lib/services/fcm_service.dart`
+  - `apps/mobile/lib/main.dart`
+  - `apps/mobile/lib/providers/ai_provider.dart`
+  - `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+  - `apps/mobile/lib/services/api_client.dart`
+  - `apps/mobile/lib/screens/login_screen.dart`
+  - `apps/mobile/lib/screens/today_screen.dart`
+  - `apps/mobile/pubspec.yaml`
+- 文档：
+  - `planning-app/docs/development-log.md`
+  - `planning-app/docs/schema-changes.md`
+  - `planning-app/docs/handover-summary.md`
+
+### 踩坑记录
+- `AiSessionService` 注入后，`ai.service.spec.ts` 必须提供 mock，否则 Nest 测试模块编译失败。
+- 流式生成方法 `createDraftStream` 现在透传 5 个参数，原有测试断言需更新为包含 `history`。
+- 客户端 `trackEvent` 端点此前缺失，需后端新增 `POST /analytics/events` 与批量接口。
+- `flutter analyze` 对未使用 import 严格，接入 provider 时避免重复导入 `api_client.dart`。
+- 本地未安装 PostgreSQL，无法运行 `prisma migrate dev`，新 schema 变更需到有数据库环境后生成迁移。
+
+### 遗留与后续
+- **数据库迁移**：当前 schema 相对于最后应用迁移 `20260816000000_add_calendar_subscription` 仍有差异（如 `User.fcmToken`、`AIMessage` 表、可能还有其他未同步字段），需在有 PostgreSQL 环境后执行：
+  ```bash
+  cd services/api
+  npx prisma migrate dev --name add_fcm_and_ai_session
+  npx prisma migrate deploy
+  ```
+- **Firebase 原生配置**：Flutter 端需补充 `android/app/google-services.json` 与 `ios/Runner/GoogleService-Info.plist`（或 `firebase_options.dart`），并在 `android/app/build.gradle.kts` 应用 `com.google.gms.google-services` 插件。
+- **服务器部署**：Week 27 服务端改动尚未部署到 `xutaostudy.xyz`，需按交接文档步骤执行。
+- **商业版 Week 19+ 功能**：作为未来扩展备份，当前个人版暂不做。

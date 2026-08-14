@@ -113,6 +113,7 @@ export class PlanOrchestrator {
     constraints?: Record<string, unknown>,
     template?: AITemplate,
     modelName?: string,
+    history?: { role: "system" | "user" | "assistant"; content: string }[],
   ): Promise<{
     draft: PlanDraftPayload;
     fallback: boolean;
@@ -148,7 +149,7 @@ export class PlanOrchestrator {
       await this.modelAdapter.generateStructured<PlanDraftPayload>(
         prompt,
         schema,
-        modelName,
+        { modelName, history },
       );
 
     if (response.error || !response.data) {
@@ -245,7 +246,7 @@ export class PlanOrchestrator {
     for await (const event of this.modelAdapter.streamProgress<PlanDraftPayload>(
       prompt,
       schema,
-      modelName,
+      { modelName },
     )) {
       if (event.type === "result") {
         response = event.response;
@@ -359,7 +360,7 @@ export class PlanOrchestrator {
       stage: PlanStage;
       assumptions?: string[];
       warnings?: string[];
-    }>(prompt, schema, modelName);
+    }>(prompt, schema, { modelName });
 
     if (response.error || !response.data) {
       return {
@@ -415,6 +416,7 @@ export class PlanOrchestrator {
       habitTotal: number;
     },
     modelName?: string,
+    history?: { role: "system" | "user" | "assistant"; content: string }[],
   ): Promise<{
     summary: string;
     insights: string[];
@@ -440,14 +442,14 @@ export class PlanOrchestrator {
       };
     }
 
-    const prompt = this.buildReviewPrompt(input, context);
+    const prompt = this.buildReviewPrompt(input, context, history);
     const schema = this.getReviewSchema();
 
     const response = await this.modelAdapter.generateStructured<{
       summary: string;
       insights: string[];
       nextActions: string[];
-    }>(prompt, schema, modelName);
+    }>(prompt, schema, { modelName });
 
     if (response.error || !response.data) {
       return {
@@ -509,12 +511,16 @@ export class PlanOrchestrator {
       habitCheckins: number;
       habitTotal: number;
     },
+    history?: { role: "system" | "user" | "assistant"; content: string }[],
   ): string {
     const periodText = context.period === "weekly" ? "周" : "日";
+    const historyText = history?.length
+      ? `\n此前对话上下文（按时间顺序）：\n${history.map((m) => `${m.role === "user" ? "用户" : "AI"}：${m.content}`).join("\n")}\n`
+      : "";
     return `你是一位专业的目标复盘教练。请根据以下数据生成一段${periodText}复盘。
 
 目标：${context.goalTitle}
-用户输入：${input}
+用户输入：${input}${historyText}
 统计周期：${context.startDate} 至 ${context.endDate}
 
 数据：
@@ -565,6 +571,7 @@ export class PlanOrchestrator {
     },
     constraints?: Record<string, unknown>,
     modelName?: string,
+    history?: { role: "system" | "user" | "assistant"; content: string }[],
   ): Promise<{
     draft: PlanDraftPayload;
     fallback: boolean;
@@ -604,6 +611,7 @@ export class PlanOrchestrator {
       previousPayload,
       progressContext,
       planConstraints,
+      history,
     );
     const schema = this.getPlanSchema(planConstraints);
 
@@ -611,7 +619,7 @@ export class PlanOrchestrator {
       await this.modelAdapter.generateStructured<PlanDraftPayload>(
         prompt,
         schema,
-        modelName,
+        { modelName },
       );
 
     if (response.error || !response.data) {
@@ -647,6 +655,7 @@ export class PlanOrchestrator {
       feedback?: string;
     },
     constraints: PlanConstraints,
+    history?: { role: "system" | "user" | "assistant"; content: string }[],
   ): string {
     const stageDates = this.computeStageDates(
       previousPayload.goal.startDate ?? new Date().toISOString().split("T")[0],
@@ -663,7 +672,11 @@ export class PlanOrchestrator {
       )
       .join("\n");
 
-    return `用户目标：${userInput}
+    const historyText = history?.length
+      ? `\n此前对话上下文（按时间顺序）：\n${history.map((m) => `${m.role === "user" ? "用户" : "AI"}：${m.content}`).join("\n")}\n`
+      : "";
+
+    return `用户目标：${userInput}${historyText}
 
 原始计划：
 - 总时长：${previousPayload.planDuration} 天

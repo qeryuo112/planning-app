@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject } from "class-validator";
+import { IsString, IsOptional, IsObject, IsEnum } from "class-validator";
 
 export class ReplanDto {
   @IsString()
@@ -11,4 +11,12 @@ export class ReplanDto {
   @IsOptional()
   @IsObject()
   feedback?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  followUp?: string;
 }

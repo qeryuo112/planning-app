@@ -8,6 +8,9 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { CreateReminderDto } from "./dto/create-reminder.dto";
 import { UpdateReminderDto } from "./dto/update-reminder.dto";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
+import { FcmService } from "../notifications/fcm.service";
+import { MetricsService } from "../metrics/metrics.service";
 
 /**
  * 提醒服务
@@ -20,6 +23,9 @@ export class RemindersService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly syncEvents: SyncEventsService,
+    private readonly analytics: AnalyticsService,
+    private readonly fcm: FcmService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async create(userId: string, dto: CreateReminderDto) {
@@ -41,6 +47,17 @@ export class RemindersService {
               JSON.stringify(dto.repeatRule),
             ) as Prisma.InputJsonValue)
           : undefined,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "reminder.created",
+      targetId: reminder.id,
+      metadata: {
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        channel: reminder.channel,
       },
     });
 
@@ -152,6 +169,42 @@ export class RemindersService {
           snoozeCount: reminder.snoozeCount,
         },
       });
+
+      void this.analytics.track({
+        userId: reminder.userId,
+        eventType: "reminder.triggered",
+        targetId: reminder.id,
+        metadata: {
+          targetType: reminder.targetType,
+          targetId: reminder.targetId,
+          channel: reminder.channel,
+        },
+      });
+
+      if (reminder.channel === "push") {
+        const title = "计划提醒";
+        const body = `你的 ${reminder.targetType} 到期了`;
+        void this.fcm
+          .sendToUser(reminder.userId, {
+            title,
+            body,
+            data: {
+              targetType: reminder.targetType,
+              targetId: reminder.targetId,
+              reminderId: reminder.id,
+            },
+          })
+          .then((ok) => {
+            this.metrics.remindersPushedTotal
+              .labels(ok ? "success" : "failed", reminder.channel)
+              .inc();
+          })
+          .catch(() => {
+            this.metrics.remindersPushedTotal
+              .labels("failed", reminder.channel)
+              .inc();
+          });
+      }
     }
 
     return { processed: due.length };
@@ -162,10 +215,19 @@ export class RemindersService {
 
     await this.findOne(userId, id);
 
-    return this.prisma.reminder.update({
+    const result = await this.prisma.reminder.update({
       where: { id },
       data: { status: "dismissed" },
     });
+
+    void this.analytics.track({
+      userId,
+      eventType: "reminder.dismissed",
+      targetId: id,
+      metadata: { previousStatus: result.status },
+    });
+
+    return result;
   }
 
   async snooze(userId: string, id: string, minutes: number) {
@@ -180,7 +242,7 @@ export class RemindersService {
       reminder.triggerAt.getTime() + minutes * 60 * 1000,
     );
 
-    return this.prisma.reminder.update({
+    const result = await this.prisma.reminder.update({
       where: { id },
       data: {
         triggerAt: newTriggerAt,
@@ -188,6 +250,15 @@ export class RemindersService {
         snoozeCount: { increment: 1 },
       },
     });
+
+    void this.analytics.track({
+      userId,
+      eventType: "reminder.snoozed",
+      targetId: id,
+      metadata: { minutes, newTriggerAt: result.triggerAt.toISOString() },
+    });
+
+    return result;
   }
 
   private async ensureTargetExists(

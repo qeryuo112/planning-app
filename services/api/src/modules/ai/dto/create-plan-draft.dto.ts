@@ -38,6 +38,26 @@ export class CreatePlanDraftDto {
   templateId?: string;
 
   @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  followUp?: string;
+
+  @IsOptional()
   @IsObject()
   constraints?: Record<string, unknown>;
+}
+
+export class FollowUpDraftDto {
+  @IsString()
+  sessionId: string;
+
+  @IsString()
+  followUp: string;
+
+  @IsOptional()
+  @IsUUID()
+  goalId?: string;
 }

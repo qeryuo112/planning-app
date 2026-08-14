@@ -12,6 +12,8 @@ import { CreatePlanDraftDto } from "./dto/create-plan-draft.dto";
 import { ApprovePlanDto } from "./dto/approve-plan.dto";
 import { ReplanDto } from "./dto/replan.dto";
 import { ReviewDto } from "./dto/review.dto";
+import { AnalyticsService } from "../analytics/analytics.service";
+import { AiSessionService } from "./ai-session.service";
 import {
   AITemplate,
   findTemplateById,
@@ -35,10 +37,14 @@ export class AiService {
     private readonly modelAdapter: ModelAdapter,
     private readonly orchestrator: PlanOrchestrator,
     private readonly executor: PlanExecutor,
+    private readonly analytics: AnalyticsService,
+    private readonly aiSession: AiSessionService,
   ) {}
 
   async createDraft(userId: string, dto: CreatePlanDraftDto) {
-    this.logger.debug(`创建计划草案，输入: ${dto.userInput}, user=${userId}`);
+    this.logger.debug(
+      `创建计划草案，输入: ${dto.userInput}, followUp=${dto.followUp ?? "-"}, session=${dto.sessionId ?? "new"}, user=${userId}`,
+    );
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -70,11 +76,33 @@ export class AiService {
       userPreferences,
     };
 
+    const effectiveInput = dto.followUp ?? dto.userInput;
+
+    // 多轮会话管理
+    const session = dto.sessionId
+      ? await this.aiSession.getSession(userId, dto.sessionId)
+      : await this.aiSession.getOrCreateSession(
+          userId,
+          dto.goalId ? "goal" : "general",
+          dto.goalId,
+        );
+
+    await this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: effectiveInput,
+      metadata: { templateId: template?.id, goalId: dto.goalId },
+    });
+
+    const recentMessages = await this.aiSession.getMessages(session.id, 20);
+    const history = this.aiSession.toChatMessages(recentMessages);
+
     const context = {
       ...userPreferences,
-      userInput: dto.userInput,
+      userInput: effectiveInput,
       constraints: dto.constraints,
       templateId: template?.id,
+      sessionId: session.id,
     };
 
     const costCheck = await this.checkDailyCostLimit(userId, model);
@@ -109,10 +137,11 @@ export class AiService {
     } else {
       const start = Date.now();
       generation = await this.orchestrator.generateDraft(
-        dto.userInput,
+        effectiveInput,
         constraints,
         template,
         model,
+        history,
       );
       latency = Date.now() - start;
       if (generation.fallback) {
@@ -178,6 +207,7 @@ export class AiService {
     await this.prisma.aIOperation.create({
       data: {
         userId,
+        sessionId: session.id,
         model: config.model,
         promptVersion: this.promptVersion,
         inputTokens: generation.usage?.promptTokens ?? 0,
@@ -204,6 +234,36 @@ export class AiService {
     const overload =
       !generation.fallback && estimatedMinutes > availableWeeklyMinutes;
 
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.created",
+      targetId: planVersion.id,
+      metadata: {
+        fallback: !!fallbackReason,
+        overload,
+        source: generation.fallback
+          ? (template ? "template" : "fallback")
+          : "ai",
+        model: config.model,
+        sessionId: session.id,
+      },
+    });
+
+    void this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: JSON.stringify({
+        draftId: planVersion.id,
+        goalTitle: payload.goal?.title,
+        stageCount: payload.stages?.length,
+        taskCount: payload.tasks?.length,
+        fallback: !!fallbackReason,
+      }),
+      metadata: { planVersionId: planVersion.id, fallback: !!fallbackReason },
+    });
+
+    void this.aiSession.maybeSummarize(session.id);
+
     return {
       draftId: planVersion.id,
       status: "draft",
@@ -212,6 +272,7 @@ export class AiService {
       error: fallbackReason ?? undefined,
       overload,
       availableWeeklyMinutes,
+      sessionId: session.id,
     };
   }
 
@@ -277,6 +338,16 @@ export class AiService {
         totalStages: null,
         payload: { status: "pending" } as any,
         userFeedback: { context, templateId: template?.id } as any,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.stream_started",
+      targetId: planVersion.id,
+      metadata: {
+        templateId: template?.id,
+        goalId: dto.goalId,
       },
     });
 
@@ -645,6 +716,16 @@ export class AiService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.approved",
+      targetId: id,
+      metadata: {
+        goalId: result.goalId,
+        projectId: result.projectId,
+      },
+    });
+
     return {
       draftId: id,
       approved: true,
@@ -777,6 +858,18 @@ export class AiService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.advanced",
+      targetId: newPlanVersion.id,
+      metadata: {
+        previousDraftId: id,
+        fallback: !!fallbackReason,
+        stage: payload.currentStage,
+        model: config.model,
+      },
+    });
+
     return {
       draftId: newPlanVersion.id,
       status: "draft",
@@ -831,6 +924,21 @@ export class AiService {
       currentStage: previousPayload.currentStage + 1,
     };
 
+    const session = dto.sessionId
+      ? await this.aiSession.getSession(userId, dto.sessionId)
+      : await this.aiSession.getOrCreateSession(userId, "replan", dto.goalId);
+    const effectiveInput = dto.followUp ?? dto.reason ?? goal.title;
+
+    await this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: effectiveInput,
+      metadata: { goalId: dto.goalId, previousVersionId: latestVersion.id },
+    });
+
+    const recentMessages = await this.aiSession.getMessages(session.id, 20);
+    const history = this.aiSession.toChatMessages(recentMessages);
+
     const model = this.resolveModel("strong");
     const config = this.modelAdapter.getConfig(model);
     const costCheck = await this.checkDailyCostLimit(userId, model);
@@ -864,6 +972,7 @@ export class AiService {
         progressContext,
         constraints,
         model,
+        history,
       );
       latency = Date.now() - start;
     }
@@ -918,6 +1027,33 @@ export class AiService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "ai.replan.created",
+      targetId: newPlanVersion.id,
+      metadata: {
+        goalId: goal.id,
+        previousVersionId: latestVersion.id,
+        fallback: !!fallbackReason,
+        model: config.model,
+      },
+    });
+
+    void this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: JSON.stringify({
+        draftId: newPlanVersion.id,
+        goalTitle: payload.goal?.title,
+        stageCount: payload.stages?.length,
+        taskCount: payload.tasks?.length,
+        fallback: !!fallbackReason,
+      }),
+      metadata: { planVersionId: newPlanVersion.id, fallback: !!fallbackReason },
+    });
+
+    void this.aiSession.maybeSummarize(session.id);
+
     return {
       draftId: newPlanVersion.id,
       status: "draft",
@@ -925,6 +1061,7 @@ export class AiService {
       fallback: !!fallbackReason,
       error: fallbackReason ?? undefined,
       previousVersionId: latestVersion.id,
+      sessionId: session.id,
     };
   }
 
@@ -993,6 +1130,21 @@ export class AiService {
       habitTotal: allHabits.length,
     };
 
+    const session = dto.sessionId
+      ? await this.aiSession.getSession(userId, dto.sessionId)
+      : await this.aiSession.getOrCreateSession(userId, "review", dto.goalId);
+    const effectiveInput = dto.followUp ?? goal.title;
+
+    await this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: effectiveInput,
+      metadata: { goalId: dto.goalId, period: dto.period },
+    });
+
+    const recentMessages = await this.aiSession.getMessages(session.id, 20);
+    const history = this.aiSession.toChatMessages(recentMessages);
+
     const model = this.resolveModel("strong");
     const config = this.modelAdapter.getConfig(model);
     const costCheck = await this.checkDailyCostLimit(userId, model);
@@ -1025,6 +1177,7 @@ export class AiService {
         goal.title,
         reviewContext,
         model,
+        history,
       );
       latency = Date.now() - start;
     }
@@ -1072,6 +1225,33 @@ export class AiService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "ai.review.created",
+      targetId: review.id,
+      metadata: {
+        goalId: dto.goalId,
+        period: dto.period,
+        fallback: !!fallbackReason,
+        model: config.model,
+      },
+    });
+
+    void this.aiSession.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: JSON.stringify({
+        reviewId: review.id,
+        summary: generation.summary,
+        insightCount: generation.insights.length,
+        nextActionCount: generation.nextActions.length,
+        fallback: !!fallbackReason,
+      }),
+      metadata: { reviewId: review.id, fallback: !!fallbackReason },
+    });
+
+    void this.aiSession.maybeSummarize(session.id);
+
     return {
       reviewId: review.id,
       period: dto.period,
@@ -1082,6 +1262,7 @@ export class AiService {
       nextActions: generation.nextActions,
       fallback: !!fallbackReason,
       error: fallbackReason ?? undefined,
+      sessionId: session.id,
     };
   }
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources";
 
 export interface StructuredResponse<T> {
   data: T | null;
@@ -83,33 +84,43 @@ export class ModelAdapter {
   async generateStructured<T>(
     prompt: string,
     schema: object,
-    modelName?: string,
+    options: {
+      modelName?: string;
+      history?: ChatCompletionMessageParam[];
+    } = {},
   ): Promise<StructuredResponse<T>> {
     if (!this.openai) {
       return {
         data: null,
         raw: "",
-        model: modelName ?? this.config.model,
+        model: options.modelName ?? this.config.model,
         error: "AI 模型未配置",
       };
     }
 
-    const model = modelName ?? this.config.model;
+    const model = options.modelName ?? this.config.model;
     const start = Date.now();
     try {
       this.logger.debug(
         `调用模型生成结构化输出，provider=${this.config.provider}, model=${model}, prompt 长度: ${prompt.length}`,
       );
 
+      const messages: ChatCompletionMessageParam[] = [
+        {
+          role: "system",
+          content: `你是一个严格的计划教练。请只输出符合以下 JSON Schema 的 JSON 对象，不要添加任何额外解释：\n${JSON.stringify(schema)}`,
+        },
+      ];
+
+      if (options.history?.length) {
+        messages.push(...options.history);
+      }
+
+      messages.push({ role: "user", content: prompt });
+
       const completion = await this.openai.chat.completions.create({
         model,
-        messages: [
-          {
-            role: "system",
-            content: `你是一个严格的计划教练。请只输出符合以下 JSON Schema 的 JSON 对象，不要添加任何额外解释：\n${JSON.stringify(schema)}`,
-          },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
       });
 
@@ -162,7 +173,10 @@ export class ModelAdapter {
   async *streamProgress<T>(
     prompt: string,
     schema: object,
-    modelName?: string,
+    options: {
+      modelName?: string;
+      history?: ChatCompletionMessageParam[];
+    } = {},
   ): AsyncGenerator<StreamEvent<T>> {
     yield { type: "progress", stage: "preparing" };
 
@@ -172,7 +186,7 @@ export class ModelAdapter {
         response: {
           data: null,
           raw: "",
-          model: modelName ?? this.config.model,
+          model: options.modelName ?? this.config.model,
           error: "AI 模型未配置",
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         },
@@ -181,11 +195,7 @@ export class ModelAdapter {
     }
 
     yield { type: "progress", stage: "calling_model" };
-    const response = await this.generateStructured<T>(
-      prompt,
-      schema,
-      modelName,
-    );
+    const response = await this.generateStructured<T>(prompt, schema, options);
 
     if (response.error) {
       this.logger.warn(`流式生成失败: ${response.error}`);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/notification_service.dart';
+import 'services/fcm_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/today_screen.dart';
 
@@ -9,6 +10,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService().initialize();
+  // 初始化 Firebase 与远程推送；若未配置 Firebase 原生文件会优雅降级。
+  await FcmService().initialize();
 
   // 设置通知点击回调（应用存活时点击通知）
   NotificationService.onNotificationTap = (payload) {

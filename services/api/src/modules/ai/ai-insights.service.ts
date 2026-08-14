@@ -110,7 +110,7 @@ export class AiInsightsService {
               "riskAreas",
             ],
           },
-          model,
+          { modelName: model },
         );
       latency = Date.now() - start;
       usage = response.usage ?? usage;

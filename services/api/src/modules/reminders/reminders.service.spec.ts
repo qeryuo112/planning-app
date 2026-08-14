@@ -2,6 +2,9 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { PrismaClient } from "@prisma/client";
 import { RemindersService } from "./reminders.service";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
+import { FcmService } from "../notifications/fcm.service";
+import { MetricsService } from "../metrics/metrics.service";
 
 const mockPrisma = {
   reminder: {
@@ -21,6 +24,22 @@ const mockSyncEvents = {
   broadcastToUser: jest.fn(),
 };
 
+const mockAnalytics = {
+  track: jest.fn().mockResolvedValue({ id: "e1" }),
+  trackBatch: jest.fn().mockResolvedValue({ count: 0 }),
+  findEvents: jest.fn().mockResolvedValue([]),
+};
+
+const mockFcm = {
+  sendToUser: jest.fn().mockResolvedValue(true),
+};
+
+const mockMetrics = {
+  remindersPushedTotal: {
+    labels: jest.fn().mockReturnValue({ inc: jest.fn() }),
+  },
+};
+
 describe("RemindersService", () => {
   let service: RemindersService;
 
@@ -30,6 +49,9 @@ describe("RemindersService", () => {
         RemindersService,
         { provide: PrismaClient, useValue: mockPrisma },
         { provide: SyncEventsService, useValue: mockSyncEvents },
+        { provide: AnalyticsService, useValue: mockAnalytics },
+        { provide: FcmService, useValue: mockFcm },
+        { provide: MetricsService, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -121,7 +143,10 @@ describe("RemindersService", () => {
     it("should postpone reminder by 15 minutes", async () => {
       const triggerAt = new Date("2026-08-11T14:00:00.000Z");
       mockPrisma.reminder.findFirst.mockResolvedValue({ id: "r1", triggerAt });
-      mockPrisma.reminder.update.mockResolvedValue({ id: "r1" });
+      mockPrisma.reminder.update.mockResolvedValue({
+        id: "r1",
+        triggerAt: new Date(triggerAt.getTime() + 15 * 60 * 1000),
+      });
 
       await service.snooze("u1", "r1", 15);
 

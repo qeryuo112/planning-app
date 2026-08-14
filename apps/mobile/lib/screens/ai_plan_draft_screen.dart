@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../providers/ai_provider.dart';
+import '../providers/auth_provider.dart';
 
 class AiPlanDraftScreen extends ConsumerStatefulWidget {
   final String? goalId;
@@ -16,6 +17,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   final _inputController = TextEditingController(
     text: '我想3个月通过英语四级，每天40分钟',
   );
+  final _followUpController = TextEditingController();
   String? _selectedFeedback;
   bool _approving = false;
   int _planDuration = 30;
@@ -28,6 +30,9 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   Map<String, dynamic>? _usage;
   bool _loadingTemplates = true;
   Map<String, dynamic>? _recommendedTemplate;
+  String? _sessionId;
+  bool _showFollowUp = false;
+  final List<Map<String, dynamic>> _messages = [];
 
   @override
   void initState() {
@@ -64,20 +69,25 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     }
   }
 
-  Future<void> _generate() async {
+  Future<void> _generate({String? followUp}) async {
     _selectedFeedback = null;
     setState(() {
       _isStreaming = true;
       _progressMessage = '正在连接 AI…';
+      if (followUp != null) {
+        _messages.add({'role': 'user', 'content': followUp});
+      }
     });
 
     try {
       final stream = ref.read(aiDraftProvider.notifier).createDraftStream(
-            _inputController.text,
+            followUp ?? _inputController.text,
             goalId: widget.goalId,
             templateId: _selectedTemplateId,
             planDuration: _planDuration,
             stageLength: _stageLength,
+            sessionId: _sessionId,
+            followUp: followUp,
           );
 
       await for (final event in stream) {
@@ -89,6 +99,12 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             setState(() {
               _isStreaming = false;
               _progressMessage = null;
+              _sessionId = event.draft['sessionId'] as String?;
+              _showFollowUp = true;
+              _messages.add({
+                'role': 'assistant',
+                'content': event.draft['plan']?['goal']?['title'] ?? '已生成计划草案',
+              });
             });
             await _loadUsage();
           case AiDraftDoneEvent():
@@ -106,6 +122,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             );
         }
       }
+      _trackDraftGenerated(followUp != null);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -125,6 +142,26 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     super.dispose();
   }
 
+  void _trackDraftGenerated(bool isFollowUp) {
+    final client = ref.read(apiClientProvider);
+    final draft = ref.read(aiDraftProvider).value;
+    client.trackEvent(
+      isFollowUp ? 'ai.draft.follow_up_generated' : 'ai.draft.generated',
+      targetId: draft?['draftId'] as String?,
+      metadata: {
+        'fallback': draft?['fallback'] == true,
+        'sessionId': _sessionId,
+      },
+    );
+  }
+
+  Future<void> _sendFollowUp() async {
+    final text = _followUpController.text.trim();
+    if (text.isEmpty) return;
+    _followUpController.clear();
+    await _generate(followUp: text);
+  }
+
   Future<void> _advance(String draftId) async {
     setState(() => _advancing = true);
     try {
@@ -138,6 +175,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
       if (mounted) setState(() => _advancing = false);
     }
   }
+
   Future<void> _approve(String draftId) async {
     setState(() => _approving = true);
     try {
@@ -146,6 +184,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             feedback: _selectedFeedback,
           );
       if (approved != null && mounted) {
+        ref.read(apiClientProvider).trackEvent('ai.draft.approved', targetId: draftId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('计划已确认，请切换到「今日」页查看任务')),
         );
@@ -246,6 +285,37 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.primary,
                 ),
+              ),
+            ],
+            if (_showFollowUp) ...[
+              const SizedBox(height: 16),
+              ..._buildConversationThread(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _followUpController,
+                      decoration: const InputDecoration(
+                        hintText: '继续补充或调整要求…',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _sendFollowUp(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _isStreaming ? null : _sendFollowUp,
+                    icon: _isStreaming
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send),
+                  ),
+                ],
               ),
             ],
             const SizedBox(height: 24),
@@ -644,5 +714,35 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     ];
 
     return ListView(children: children);
+  }
+
+  List<Widget> _buildConversationThread() {
+    return _messages.map<Widget>((m) {
+      final isUser = m['role'] == 'user';
+      return Container(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isUser
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
+          ),
+          child: Text(
+            m['content'] as String? ?? '',
+            style: TextStyle(
+              color: isUser
+                  ? Theme.of(context).colorScheme.onPrimaryContainer
+                  : Colors.black87,
+            ),
+          ),
+        ),
+      );
+    }).toList();
   }
 }

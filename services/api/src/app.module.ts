@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
 import { LoggerModule } from "nestjs-pino";
+import { PrometheusModule } from "@willsoto/nestjs-prometheus";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -18,6 +19,7 @@ import { ReviewsModule } from "./modules/reviews/reviews.module";
 import { AiModule } from "./modules/ai/ai.module";
 import { TodayModule } from "./modules/today/today.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { MetricsModule } from "./modules/metrics/metrics.module";
 import { PrismaModule } from "./modules/prisma.module";
 import { RedisModule } from "./modules/redis.module";
 import { SyncModule } from "./modules/sync/sync.module";
@@ -27,6 +29,7 @@ import { SocialModule } from "./modules/social/social.module";
 import { ExternalModule } from "./modules/external/external.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { ScheduleModule } from "@nestjs/schedule";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 /**
  * 根模块：集中加载配置、日志、数据库与所有业务模块。
@@ -57,6 +60,12 @@ import { ScheduleModule } from "@nestjs/schedule";
     }),
     PrismaModule,
     RedisModule,
+    MetricsModule,
+    PrometheusModule.register({
+      defaultMetrics: {
+        enabled: true,
+      },
+    }),
     SyncModule,
     AuthModule,
     UsersModule,
@@ -75,6 +84,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     SocialModule,
     ExternalModule,
     ReportsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

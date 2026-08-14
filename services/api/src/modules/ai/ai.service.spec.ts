@@ -6,6 +6,8 @@ import { ModelAdapter } from "./model-adapter.service";
 import { PlanOrchestrator } from "./plan-orchestrator.service";
 import { PlanExecutor } from "./plan-executor.service";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
+import { AiSessionService } from "./ai-session.service";
 
 const mockPrisma = {
   user: {
@@ -111,6 +113,22 @@ const mockSyncEventsService = {
   createEvent: jest.fn().mockResolvedValue({}),
 };
 
+const mockAiSession = {
+  getOrCreateSession: jest.fn().mockResolvedValue({ id: "s1" }),
+  getSession: jest.fn().mockResolvedValue({ id: "s1" }),
+  getMessages: jest.fn().mockResolvedValue([]),
+  addMessage: jest.fn().mockResolvedValue({}),
+  addMessages: jest.fn().mockResolvedValue([]),
+  toChatMessages: jest.fn().mockReturnValue([]),
+  maybeSummarize: jest.fn(),
+};
+
+const mockAnalytics = {
+  track: jest.fn().mockResolvedValue({ id: "e1" }),
+  trackBatch: jest.fn().mockResolvedValue({ count: 0 }),
+  findEvents: jest.fn().mockResolvedValue([]),
+};
+
 describe("AiService", () => {
   let service: AiService;
 
@@ -124,6 +142,8 @@ describe("AiService", () => {
         { provide: PlanExecutor, useValue: mockExecutor },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: SyncEventsService, useValue: mockSyncEventsService },
+        { provide: AnalyticsService, useValue: mockAnalytics },
+        { provide: AiSessionService, useValue: mockAiSession },
       ],
     }).compile();
 
@@ -172,6 +192,7 @@ describe("AiService", () => {
         }),
         undefined,
         expect.any(String),
+        [],
       ]);
       expect(mockPrisma.planVersion.create).toHaveBeenCalledWith(
         expect.objectContaining({

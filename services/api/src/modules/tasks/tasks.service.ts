@@ -6,6 +6,7 @@ import { CompleteTaskDto } from "./dto/complete-task.dto";
 import { PostponeTaskDto } from "./dto/postpone-task.dto";
 import { MakeupTaskDto } from "./dto/makeup-task.dto";
 import { SyncEventsService } from "../sync/sync-events.service";
+import { AnalyticsService } from "../analytics/analytics.service";
 import { emitReportCacheInvalidation } from "../../common/events/report-cache.events";
 
 /**
@@ -19,6 +20,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly syncEvents: SyncEventsService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
@@ -67,6 +69,17 @@ export class TasksService {
         title: task.title,
         scheduledDate: task.scheduledDate?.toISOString(),
         status: task.status,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "task.created",
+      targetId: task.id,
+      metadata: {
+        title: task.title,
+        scheduledDate: task.scheduledDate?.toISOString(),
+        energyLevel: task.energyLevel,
       },
     });
 
@@ -211,6 +224,17 @@ export class TasksService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "task.completed",
+      targetId: updatedTask.id,
+      metadata: {
+        actualMinutes: dto.actualMinutes,
+        qualityRating: dto.qualityRating,
+        result,
+      },
+    });
+
     emitReportCacheInvalidation(userId);
     return { task: updatedTask, checkin };
   }
@@ -257,6 +281,16 @@ export class TasksService {
       },
     });
 
+    void this.analytics.track({
+      userId,
+      eventType: "task.postponed",
+      targetId: updatedTask.id,
+      metadata: {
+        reason: dto.reason ?? null,
+        newScheduledDate: updatedTask.scheduledDate?.toISOString(),
+      },
+    });
+
     emitReportCacheInvalidation(userId);
     return { task: updatedTask, checkinSkipped: true };
   }
@@ -294,6 +328,16 @@ export class TasksService {
       targetId: updatedTask.id,
       payload: {
         status: updatedTask.status,
+        actualMinutes: dto.actualMinutes,
+        qualityRating: dto.qualityRating,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "task.madeup",
+      targetId: updatedTask.id,
+      metadata: {
         actualMinutes: dto.actualMinutes,
         qualityRating: dto.qualityRating,
       },

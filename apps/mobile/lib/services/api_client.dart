@@ -76,6 +76,30 @@ class ApiClient {
     return _handleResponse(response);
   }
 
+  /// 上报单条客户端埋点事件。
+  Future<dynamic> trackEvent(String eventType, {
+    String? targetId,
+    Map<String, dynamic>? metadata,
+    DateTime? clientTimestamp,
+  }) async {
+    return post('/analytics/events', body: {
+      'eventType': eventType,
+      if (targetId != null) 'targetId': targetId,
+      if (metadata != null) 'metadata': metadata,
+      'clientTimestamp': (clientTimestamp ?? DateTime.now()).toUtc().toIso8601String(),
+    });
+  }
+
+  /// 批量上报客户端埋点事件。
+  Future<dynamic> trackEvents(List<Map<String, dynamic>> events) async {
+    return post('/analytics/events/batch', body: {
+      'events': events.map((e) => {
+        ...e,
+        'clientTimestamp': (e['clientTimestamp'] as DateTime? ?? DateTime.now()).toUtc().toIso8601String(),
+      }).toList(),
+    });
+  }
+
   dynamic _handleResponse(http.Response response) {
     _logger.d('Response ${response.statusCode}: ${response.body}');
     if (response.statusCode >= 200 && response.statusCode < 300) {

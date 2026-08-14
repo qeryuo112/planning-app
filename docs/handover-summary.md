@@ -145,7 +145,10 @@
 - [x] **Week 27 新增**：`AISession`/`AIMessage` 多轮对话上下文，`createDraft`/`replan`/`review` 支持 `sessionId`/`followUp`
 - [x] **Week 27 新增**：Flutter `FcmService` 初始化、Token 上传/刷新/后台消息监听（未配置 Firebase 时优雅降级）
 - [x] **Week 27 新增**：Flutter AI 计划页「继续对话」入口与消息气泡列表
-- [x] **Week 27 新增**：Flutter 关键页面埋点（登录/今日/任务完成/习惯打卡/AI 生成与确认）
+- [x] **Week 27-D 新增**：Inbox 本地优先 + 乐观更新 + 失败回退
+- [x] **Week 27-D 新增**：Calendar 本地优先 + 乐观更新 + 失败回退
+- [x] **Week 27-D 新增**：日历订阅自动刷新 UI（30 秒轮询 + 生命周期恢复刷新）
+- [x] **Week 27-D 新增**：SyncEngine 操作结果广播流与指数退避重试
 
 ### 3.2 已生成数据模型
 

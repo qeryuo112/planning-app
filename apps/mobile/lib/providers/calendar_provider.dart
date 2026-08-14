@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../models/calendar_event_model.dart';
@@ -7,6 +8,8 @@ import '../services/api_client.dart';
 import '../services/local_database.dart';
 import '../services/sync_engine.dart';
 import 'auth_provider.dart';
+
+final _logger = Logger();
 
 final calendarProvider = StateNotifierProvider<CalendarNotifier, AsyncValue<List<CalendarEventModel>>>((ref) {
   return CalendarNotifier(
@@ -40,15 +43,14 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
   Future<void> fetchEvents(DateTime start, DateTime end) async {
     _lastStart = start;
     _lastEnd = end;
-    state = const AsyncValue.loading();
-    try {
-      // 1. 先读本地缓存
-      final localEvents = await _db.getCalendarEventsByRange(start, end);
-      if (localEvents.isNotEmpty) {
-        state = AsyncValue.data(localEvents);
-      }
 
-      // 2. 再拉服务端并合并
+    // 本地优先：先展示缓存
+    final localEvents = await _db.getCalendarEventsByRange(start, end);
+    if (localEvents.isNotEmpty && state is! AsyncData) {
+      state = AsyncValue.data(localEvents);
+    }
+
+    try {
       final startIso = start.toIso8601String();
       final endIso = end.toIso8601String();
       final res = await _client.get('/calendar?start=$startIso&end=$endIso') as List<dynamic>;
@@ -59,9 +61,14 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
       }
 
       final merged = await _db.getCalendarEventsByRange(start, end);
-      state = AsyncValue.data(merged);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      if (mounted) {
+        state = AsyncValue.data(merged);
+      }
+    } catch (e) {
+      if (mounted && state is! AsyncData) {
+        state = AsyncValue.data(localEvents);
+      }
+      _logger.w('拉取日历事件失败，已使用本地缓存: $e');
     }
   }
 
@@ -72,6 +79,7 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
     DateTime? endAt,
     String? taskId,
   }) async {
+    final previous = state.value ?? [];
     try {
       final id = const Uuid().v4();
       final now = DateTime.now();
@@ -100,13 +108,11 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
         },
       );
 
-      final current = state.value ?? [];
-      state = AsyncValue.data([...current, event]);
-
-      await _sync.pushOperations();
+      state = AsyncValue.data([...previous, event]);
+      _sync.pushOperations();
       return event;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (e) {
+      state = AsyncValue.data(previous);
       return null;
     }
   }
@@ -119,20 +125,23 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
     DateTime? endAt,
     String? taskId,
   }) async {
-    try {
-      final current = state.value ?? [];
-      final existing = current.firstWhere((e) => e.id == id);
-      final updated = CalendarEventModel(
-        id: id,
-        title: title ?? existing.title,
-        description: description ?? existing.description,
-        startAt: startAt ?? existing.startAt,
-        endAt: endAt ?? existing.endAt,
-        taskId: taskId ?? existing.taskId,
-        createdAt: existing.createdAt,
-        updatedAt: DateTime.now(),
-      );
+    final previous = state.value ?? [];
+    final existing = previous.firstWhere((e) => e.id == id);
+    final updated = CalendarEventModel(
+      id: id,
+      title: title ?? existing.title,
+      description: description ?? existing.description,
+      startAt: startAt ?? existing.startAt,
+      endAt: endAt ?? existing.endAt,
+      taskId: taskId ?? existing.taskId,
+      createdAt: existing.createdAt,
+      updatedAt: DateTime.now(),
+    );
 
+    final optimisticState = previous.map((e) => e.id == id ? updated : e).toList();
+    state = AsyncValue.data(optimisticState);
+
+    try {
       await _db.upsertCalendarEvent(updated, dirty: true);
       final body = <String, dynamic>{
         if (title != null) 'title': title,
@@ -148,18 +157,18 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
         targetId: id,
         payload: body,
       );
-
-      state = AsyncValue.data(
-        current.map((e) => e.id == id ? updated : e).toList(),
-      );
-
-      await _sync.pushOperations();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      _sync.pushOperations();
+    } catch (e) {
+      state = AsyncValue.data(previous);
+      rethrow;
     }
   }
 
   Future<void> deleteEvent(String id) async {
+    final previous = state.value ?? [];
+    final optimisticState = previous.where((e) => e.id != id).toList();
+    state = AsyncValue.data(optimisticState);
+
     try {
       await _db.deleteCalendarEvent(id);
       await _sync.queueOperation(
@@ -168,15 +177,10 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
         targetId: id,
         payload: {},
       );
-
-      final current = state.value ?? [];
-      state = AsyncValue.data(
-        current.where((e) => e.id != id).toList(),
-      );
-
-      await _sync.pushOperations();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      _sync.pushOperations();
+    } catch (e) {
+      state = AsyncValue.data(previous);
+      rethrow;
     }
   }
 
@@ -189,9 +193,9 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
         DateTime.now().add(const Duration(days: 30)),
       );
       return imported;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('导入 ICS 失败: $e');
+    } catch (e) {
+      _logger.w('导入 ICS 失败: $e');
+      rethrow;
     }
   }
 
@@ -199,9 +203,9 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
     try {
       final res = await _client.get('/calendar/export-ics') as Map<String, dynamic>;
       return res['icsText'] as String;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('导出 ICS 失败: $e');
+    } catch (e) {
+      _logger.w('导出 ICS 失败: $e');
+      rethrow;
     }
   }
 
@@ -214,57 +218,9 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
         DateTime.now().add(const Duration(days: 30)),
       );
       return imported;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('订阅外部日历失败: $e');
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> fetchSubscriptions() async {
-    try {
-      final res = await _client.get('/calendar/subscriptions') as List<dynamic>;
-      return res.cast<Map<String, dynamic>>();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('获取订阅列表失败: $e');
-    }
-  }
-
-  Future<Map<String, dynamic>> addSubscription(String name, String url) async {
-    try {
-      final res = await _client.post('/calendar/subscriptions', body: {'name': name, 'url': url}) as Map<String, dynamic>;
-      await fetchEvents(
-        DateTime.now().subtract(const Duration(days: 30)),
-        DateTime.now().add(const Duration(days: 30)),
-      );
-      return res;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('添加订阅失败: $e');
-    }
-  }
-
-  Future<void> deleteSubscription(String id) async {
-    try {
-      await _client.delete('/calendar/subscriptions/$id');
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('删除订阅失败: $e');
-    }
-  }
-
-  Future<int> syncSubscription(String id) async {
-    try {
-      final res = await _client.post('/calendar/subscriptions/$id/sync') as Map<String, dynamic>;
-      final imported = (res['imported'] as num?)?.toInt() ?? 0;
-      await fetchEvents(
-        DateTime.now().subtract(const Duration(days: 30)),
-        DateTime.now().add(const Duration(days: 30)),
-      );
-      return imported;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('同步订阅失败: $e');
+    } catch (e) {
+      _logger.w('同步外部日历失败: $e');
+      rethrow;
     }
   }
 
@@ -284,9 +240,9 @@ class CalendarNotifier extends StateNotifier<AsyncValue<List<CalendarEventModel>
       } else {
         throw Exception('无法打开浏览器: $url');
       }
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      throw Exception('打开 Google 授权失败: $e');
+    } catch (e) {
+      _logger.w('打开 Google 授权失败: $e');
+      rethrow;
     }
   }
 

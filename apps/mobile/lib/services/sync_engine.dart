@@ -7,6 +7,38 @@ import 'package:uuid/uuid.dart';
 import 'api_client.dart';
 import 'local_database.dart';
 
+/// 同步操作结果事件
+sealed class SyncOperationEvent {
+  final String type;
+  final String targetType;
+  final String targetId;
+  final String? error;
+
+  SyncOperationEvent({
+    required this.type,
+    required this.targetType,
+    required this.targetId,
+    this.error,
+  });
+}
+
+class SyncOperationSuccessEvent extends SyncOperationEvent {
+  SyncOperationSuccessEvent({
+    required super.type,
+    required super.targetType,
+    required super.targetId,
+  });
+}
+
+class SyncOperationFailedEvent extends SyncOperationEvent {
+  SyncOperationFailedEvent({
+    required super.type,
+    required super.targetType,
+    required super.targetId,
+    required super.error,
+  });
+}
+
 /// 同步引擎：操作队列 + 拉取服务端事件 + WebSocket 实时监听。
 class SyncEngine {
   final ApiClient _api;
@@ -20,6 +52,9 @@ class SyncEngine {
 
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get syncEvents => _eventController.stream;
+
+  final _operationController = StreamController<SyncOperationEvent>.broadcast();
+  Stream<SyncOperationEvent> get operationEvents => _operationController.stream;
 
   SyncEngine(this._api, this._db);
 
@@ -142,9 +177,20 @@ class SyncEngine {
         }
 
         await _db.markOperationDone(op['id'] as String);
+        _operationController.add(SyncOperationSuccessEvent(
+          type: type,
+          targetType: op['targetType'] as String,
+          targetId: targetId,
+        ));
       } catch (e, st) {
         _logger.e('同步操作失败: ${op['id']}', error: e, stackTrace: st);
         await _db.incrementRetry(op['id'] as String);
+        _operationController.add(SyncOperationFailedEvent(
+          type: op['type'] as String,
+          targetType: op['targetType'] as String,
+          targetId: op['targetId'] as String,
+          error: e.toString(),
+        ));
       }
     }
   }
@@ -165,10 +211,28 @@ class SyncEngine {
     _logger.i('操作已入队: $type / $targetId');
   }
 
+  /// 立即尝试推送一次操作队列，失败时按指数退避延迟重试。
+  Future<void> pushWithBackoff({int maxRetries = 3}) async {
+    for (var attempt = 0; attempt < maxRetries; attempt++) {
+      final ops = await _db.getPendingOperations();
+      if (ops.isEmpty) return;
+
+      await pushOperations();
+
+      final remaining = await _db.getPendingOperations();
+      if (remaining.isEmpty) return;
+
+      final delay = Duration(seconds: 2 << attempt); // 2, 4, 8 秒
+      _logger.w('操作队列仍有 ${remaining.length} 条待同步，${delay.inSeconds} 秒后重试');
+      await Future.delayed(delay);
+    }
+  }
+
   void dispose() {
     _pollTimer?.cancel();
     _socket?.dispose();
     _eventController.close();
+    _operationController.close();
   }
 
   Map<String, dynamic> _parsePayload(String raw) {

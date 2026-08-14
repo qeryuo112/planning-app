@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import 'package:uuid/uuid.dart';
 import '../models/inbox_item_model.dart';
 import '../services/api_client.dart';
@@ -20,31 +21,33 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
   final LocalDatabase _db;
   final SyncEngine _sync;
   StreamSubscription? _syncSub;
+  bool _hasLoadedLocal = false;
 
   InboxNotifier(this._client, this._db, this._sync) : super(const AsyncValue.loading()) {
     _listenSync();
-    fetchItems();
+    _loadLocalThenServer();
   }
 
   void _listenSync() {
     _syncSub = _sync.syncEvents.listen((event) {
       final type = event['eventType'] as String?;
       if (type?.startsWith('inbox.') == true) {
-        fetchItems();
+        _loadLocalThenServer();
       }
     });
   }
 
-  Future<void> fetchItems() async {
-    state = const AsyncValue.loading();
-    try {
-      // 1. 先读本地缓存
+  /// 离线优先：先读本地缓存展示，再异步拉取服务端合并。
+  Future<void> _loadLocalThenServer() async {
+    if (!_hasLoadedLocal) {
       final localItems = await _db.getInboxItems(status: 'pending');
       if (localItems.isNotEmpty) {
         state = AsyncValue.data(localItems);
+        _hasLoadedLocal = true;
       }
+    }
 
-      // 2. 再拉服务端并合并
+    try {
       final res = await _client.get('/inbox') as List<dynamic>;
       final serverItems = res.map((i) => InboxItemModel.fromJson(i as Map<String, dynamic>)).toList();
 
@@ -53,13 +56,24 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
       }
 
       final merged = await _db.getInboxItems(status: 'pending');
-      state = AsyncValue.data(merged);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      if (mounted) {
+        state = AsyncValue.data(merged);
+        _hasLoadedLocal = true;
+      }
+    } catch (e) {
+      // 离线或请求失败时，保持本地缓存，不覆盖为错误状态。
+      if (mounted && state is! AsyncData) {
+        final localItems = await _db.getInboxItems(status: 'pending');
+        state = AsyncValue.data(localItems);
+      }
+      _logger.w('拉取收件箱失败，已使用本地缓存: $e');
     }
   }
 
+  Future<void> refresh() => _loadLocalThenServer();
+
   Future<InboxItemModel?> createItem(String title, {String? description}) async {
+    final previous = state.value ?? [];
     try {
       final id = const Uuid().v4();
       final now = DateTime.now();
@@ -83,10 +97,8 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
         },
       );
 
-      final current = state.value ?? [];
-      state = AsyncValue.data([item, ...current]);
-
-      await _sync.pushOperations();
+      state = AsyncValue.data([item, ...previous]);
+      _sync.pushOperations();
       return item;
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -95,20 +107,23 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
   }
 
   Future<void> updateItem(String id, String title, {String? description}) async {
-    try {
-      final current = state.value ?? [];
-      final existing = current.firstWhere((i) => i.id == id);
-      final updated = InboxItemModel(
-        id: id,
-        title: title,
-        description: description ?? existing.description,
-        status: existing.status,
-        convertedToType: existing.convertedToType,
-        convertedToId: existing.convertedToId,
-        createdAt: existing.createdAt,
-        updatedAt: DateTime.now(),
-      );
+    final previous = state.value ?? [];
+    final existing = previous.firstWhere((i) => i.id == id);
+    final updated = InboxItemModel(
+      id: id,
+      title: title,
+      description: description ?? existing.description,
+      status: existing.status,
+      convertedToType: existing.convertedToType,
+      convertedToId: existing.convertedToId,
+      createdAt: existing.createdAt,
+      updatedAt: DateTime.now(),
+    );
 
+    final optimisticState = previous.map((i) => i.id == id ? updated : i).toList();
+    state = AsyncValue.data(optimisticState);
+
+    try {
       await _db.upsertInboxItem(updated, dirty: true);
       await _sync.queueOperation(
         type: 'update_inbox',
@@ -119,18 +134,19 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
           if (description != null) 'description': description,
         },
       );
-
-      state = AsyncValue.data(
-        current.map((i) => i.id == id ? updated : i).toList(),
-      );
-
-      await _sync.pushOperations();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      _sync.pushOperations();
+    } catch (e) {
+      // 失败时回退到之前状态
+      state = AsyncValue.data(previous);
+      rethrow;
     }
   }
 
   Future<void> convertItem(String id, String targetType, {String? scheduledDate, String? projectId, String? milestoneId}) async {
+    final previous = state.value ?? [];
+    final optimisticState = previous.where((i) => i.id != id).toList();
+    state = AsyncValue.data(optimisticState);
+
     try {
       await _db.updateInboxItemStatus(id, 'converted');
 
@@ -145,19 +161,18 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
         targetId: id,
         payload: body,
       );
-
-      final current = state.value ?? [];
-      state = AsyncValue.data(
-        current.where((i) => i.id != id).toList(),
-      );
-
-      await _sync.pushOperations();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      _sync.pushOperations();
+    } catch (e) {
+      state = AsyncValue.data(previous);
+      rethrow;
     }
   }
 
   Future<void> dismissItem(String id) async {
+    final previous = state.value ?? [];
+    final optimisticState = previous.where((i) => i.id != id).toList();
+    state = AsyncValue.data(optimisticState);
+
     try {
       await _db.updateInboxItemStatus(id, 'dismissed');
       await _sync.queueOperation(
@@ -166,15 +181,10 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
         targetId: id,
         payload: {},
       );
-
-      final current = state.value ?? [];
-      state = AsyncValue.data(
-        current.where((i) => i.id != id).toList(),
-      );
-
-      await _sync.pushOperations();
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      _sync.pushOperations();
+    } catch (e) {
+      state = AsyncValue.data(previous);
+      rethrow;
     }
   }
 
@@ -184,3 +194,5 @@ class InboxNotifier extends StateNotifier<AsyncValue<List<InboxItemModel>>> {
     super.dispose();
   }
 }
+
+final _logger = Logger();

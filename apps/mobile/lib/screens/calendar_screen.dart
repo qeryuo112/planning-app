@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../providers/calendar_provider.dart';
+import '../providers/calendar_subscriptions_provider.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -367,42 +369,36 @@ class _CalendarSubscriptionsDialog extends ConsumerStatefulWidget {
   ConsumerState<_CalendarSubscriptionsDialog> createState() => _CalendarSubscriptionsDialogState();
 }
 
-class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscriptionsDialog> {
-  List<Map<String, dynamic>> _subscriptions = [];
-  bool _loading = true;
+class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscriptionsDialog>
+    with WidgetsBindingObserver {
   final _nameController = TextEditingController();
   final _urlController = TextEditingController();
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addObserver(this);
+    final notifier = ref.read(calendarSubscriptionsProvider.notifier);
+    notifier.refresh();
+    notifier.startAutoRefresh(interval: const Duration(seconds: 30));
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoRefreshTimer?.cancel();
     _nameController.dispose();
     _urlController.dispose();
+    ref.read(calendarSubscriptionsProvider.notifier).stopAutoRefresh();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final items = await ref.read(calendarProvider.notifier).fetchSubscriptions();
-      if (mounted) {
-        setState(() {
-          _subscriptions = items;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载失败: $e')),
-        );
-      }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从后台返回（如 OAuth 授权后）自动刷新订阅列表
+    if (state == AppLifecycleState.resumed) {
+      ref.read(calendarSubscriptionsProvider.notifier).refresh();
     }
   }
 
@@ -412,13 +408,12 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
     if (name.isEmpty || url.isEmpty) return;
     Navigator.of(context).pop();
     try {
-      await ref.read(calendarProvider.notifier).addSubscription(name, url);
+      await ref.read(calendarSubscriptionsProvider.notifier).addSubscription(name, url);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ICS 订阅添加成功')),
         );
       }
-      await _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -430,13 +425,12 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
 
   Future<void> _syncSubscription(String id) async {
     try {
-      final count = await ref.read(calendarProvider.notifier).syncSubscription(id);
+      final count = await ref.read(calendarSubscriptionsProvider.notifier).syncSubscription(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('同步成功，导入 $count 个事件')),
         );
       }
-      await _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -448,13 +442,12 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
 
   Future<void> _deleteSubscription(String id) async {
     try {
-      await ref.read(calendarProvider.notifier).deleteSubscription(id);
+      await ref.read(calendarSubscriptionsProvider.notifier).deleteSubscription(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('订阅已删除')),
         );
       }
-      await _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -466,10 +459,10 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
 
   Future<void> _connectGoogle() async {
     try {
-      await ref.read(calendarProvider.notifier).connectGoogleCalendar();
+      await ref.read(calendarSubscriptionsProvider.notifier).connectGoogleCalendar();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已打开浏览器，授权后请下拉刷新')),
+          const SnackBar(content: Text('已打开浏览器，授权后返回本应用即可自动刷新')),
         );
       }
     } catch (e) {
@@ -525,6 +518,8 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
 
   @override
   Widget build(BuildContext context) {
+    final subscriptionsAsync = ref.watch(calendarSubscriptionsProvider);
+
     return AlertDialog(
       title: const Text('外部日历订阅'),
       content: SizedBox(
@@ -547,54 +542,55 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
               ],
             ),
             const SizedBox(height: 16),
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else if (_subscriptions.isEmpty)
-              const Text('暂无订阅')
-            else
-              Flexible(
-                child: RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _subscriptions.length,
-                    itemBuilder: (context, index) {
-                    final sub = _subscriptions[index];
-                    final source = sub['source'] as String? ?? 'ics';
-                    final name = sub['name'] as String? ?? '未命名';
-                    final lastSync = _formatSyncTime(sub['lastSyncAt'] as String?);
-                    final lastResult = sub['lastSyncResult'] as Map<String, dynamic>?;
-                    final imported = lastResult?['imported'] as int?;
+            subscriptionsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, st) => Center(child: Text('加载失败: $err')),
+              data: (subscriptions) {
+                if (subscriptions.isEmpty) {
+                  return const Text('暂无订阅');
+                }
+                return Flexible(
+                  child: RefreshIndicator(
+                    onRefresh: () => ref.read(calendarSubscriptionsProvider.notifier).refresh(),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: subscriptions.length,
+                      itemBuilder: (context, index) {
+                        final sub = subscriptions[index];
+                        final lastSync = _formatSyncTime(sub.lastSyncAt);
+                        final imported = sub.lastSyncResult?['imported'] as int?;
 
-                    return ListTile(
-                      leading: Icon(
-                        source == 'google'
-                            ? Icons.cloud
-                            : source == 'outlook'
-                                ? Icons.calendar_today
-                                : Icons.link,
-                      ),
-                      title: Text(name),
-                      subtitle: Text('来源: $source · 上次同步: $lastSync${imported != null ? ' · 导入 $imported 条' : ''}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.sync),
-                            onPressed: () => _syncSubscription(sub['id'] as String),
+                        return ListTile(
+                          leading: Icon(
+                            sub.source == 'google'
+                                ? Icons.cloud
+                                : sub.source == 'outlook'
+                                    ? Icons.calendar_today
+                                    : Icons.link,
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteSubscription(sub['id'] as String),
+                          title: Text(sub.name),
+                          subtitle: Text('来源: ${sub.source} · 上次同步: $lastSync${imported != null ? ' · 导入 $imported 条' : ''}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.sync),
+                                onPressed: () => _syncSubscription(sub.id),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _deleteSubscription(sub.id),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),

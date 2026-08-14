@@ -2369,3 +2369,71 @@ Week 9 候选方向：
 - **Firebase 原生配置**：Flutter 端需补充 `android/app/google-services.json` 与 `ios/Runner/GoogleService-Info.plist`（或 `firebase_options.dart`），并在 `android/app/build.gradle.kts` 应用 `com.google.gms.google-services` 插件。
 - **服务器部署**：Week 27 服务端改动尚未部署到 `xutaostudy.xyz`，需按交接文档步骤执行。
 - **商业版 Week 19+ 功能**：作为未来扩展备份，当前个人版暂不做。
+
+---
+
+## Week 27-D：离线同步与日历增强（多端可用性）（2026-08-14）
+
+### 目标
+
+1. 收件箱、日历事件接入本地 SQLite + 操作队列，实现弱网/离线可用。
+2. 日历订阅列表自动刷新 UI（定时轮询 + 生命周期恢复刷新）。
+3. 同步引擎增加操作结果事件与指数退避重试。
+
+### 已完成工作
+
+#### 1. 收件箱离线同步完善
+- `apps/mobile/lib/providers/inbox_provider.dart`
+  - 改为「本地优先」：`initState` 先加载本地缓存展示，再异步拉取服务端合并；离线时不再覆盖为错误状态。
+  - `createItem`/`updateItem`/`convertItem`/`dismissItem` 采用乐观更新，本地操作 + 操作队列入队后立即刷新 UI；失败时回退到之前状态。
+  - 收到 `inbox.*` 同步事件时重新拉取本地+服务端合并数据。
+
+#### 2. 日历事件离线同步完善
+- `apps/mobile/lib/providers/calendar_provider.dart`
+  - `fetchEvents` 本地优先：先展示缓存，再异步合并服务端数据；离线时保持缓存可见。
+  - `createEvent`/`updateEvent`/`deleteEvent` 乐观更新 + 失败回退。
+  - 订阅/同步/导入等错误不再污染事件列表状态，改为抛出异常供 UI 显示 SnackBar。
+
+#### 3. 日历订阅自动刷新 UI
+- 新增 `apps/mobile/lib/models/calendar_subscription_model.dart`：订阅模型。
+- 新增 `apps/mobile/lib/providers/calendar_subscriptions_provider.dart`：
+  - 独立管理订阅列表状态。
+  - 提供 `refresh()`、`startAutoRefresh()`（默认 30 秒轮询）、`stopAutoRefresh()`。
+  - 新增/删除/同步订阅后自动刷新事件列表。
+- `apps/mobile/lib/screens/calendar_screen.dart`
+  - 订阅弹窗改用 `calendarSubscriptionsProvider`。
+  - 弹窗 `initState` 启动 30 秒自动刷新。
+  - 实现 `WidgetsBindingObserver`，在应用从后台恢复（如 OAuth 授权返回）时自动刷新订阅列表。
+  - 提示文案改为「已打开浏览器，授权后返回本应用即可自动刷新」。
+
+#### 4. 同步引擎增强
+- `apps/mobile/lib/services/sync_engine.dart`
+  - 新增 `SyncOperationEvent` / `SyncOperationSuccessEvent` / `SyncOperationFailedEvent` 操作结果广播流。
+  - 每条操作同步完成后发布成功/失败事件，便于 UI 监听并给出提示。
+  - 新增 `pushWithBackoff({int maxRetries = 3})`：失败后按 2/4/8 秒指数退避重试。
+
+### 本地验证
+- `C:/Users/Administrator/flutter/bin/flutter analyze`：No issues found。
+- `npm run test -w services/api`：21 个测试套件，99 个测试全部通过。
+
+### 关键文件
+- Flutter：
+  - `apps/mobile/lib/providers/inbox_provider.dart`
+  - `apps/mobile/lib/providers/calendar_provider.dart`
+  - `apps/mobile/lib/providers/calendar_subscriptions_provider.dart`
+  - `apps/mobile/lib/screens/calendar_screen.dart`
+  - `apps/mobile/lib/services/sync_engine.dart`
+  - `apps/mobile/lib/models/calendar_subscription_model.dart`
+- 文档：
+  - `planning-app/docs/development-log.md`
+  - `planning-app/docs/handover-summary.md`
+
+### 踩坑记录
+- `flutter analyze` 对未使用 `catch (e, st)` 的 `st` 警告严格；对真正使用 `AsyncValue.error(e, st)` 的地方保留 `st`，其余改为 `catch (e)`。
+- 订阅弹窗使用 `WidgetsBindingObserver` 监听 `AppLifecycleState.resumed`，OAuth 授权返回后自动刷新，无需用户手动下拉。
+- 乐观更新失败回退需要在修改 state 前保存 `previous` 列表快照。
+
+### 遗留与后续
+- 当前操作队列仍使用 30 秒轮询 + 即时 push；可在网络状态监听（`connectivity_plus`）中接入即时重试。
+- 操作失败事件流已暴露，后续可在收件箱/日历页监听并展示「离线待同步」提示或红色角标。
+- 服务器尚未部署 Week 27 改动，需按交接文档步骤执行。

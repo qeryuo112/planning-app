@@ -9,10 +9,24 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService().initialize();
+
+  // 设置通知点击回调（应用存活时点击通知）
   NotificationService.onNotificationTap = (payload) {
     _navigateToTodayScreen();
   };
+
+  // 处理冷启动：用户点击通知启动 App 时，获取 payload 并跳转今日页
+  final launchPayload = await NotificationService().getLaunchNotificationPayload();
+  final shouldOpenToday = launchPayload != null;
+
   runApp(const ProviderScope(child: PlanningApp()));
+
+  if (shouldOpenToday) {
+    // 等待首帧渲染后再跳转
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigateToTodayScreen();
+    });
+  }
 }
 
 void _navigateToTodayScreen() {

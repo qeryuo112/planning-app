@@ -553,10 +553,13 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
               const Text('暂无订阅')
             else
               Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _subscriptions.length,
-                  itemBuilder: (context, index) {
+                child: RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: _subscriptions.length,
+                    itemBuilder: (context, index) {
                     final sub = _subscriptions[index];
                     final source = sub['source'] as String? ?? 'ics';
                     final name = sub['name'] as String? ?? '未命名';
@@ -590,6 +593,7 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
                     );
                   },
                 ),
+              ),
               ),
           ],
         ),

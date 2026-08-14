@@ -55,7 +55,7 @@ class ExternalApi {
   }
 
   /// 从 Health Connect（Android）/ HealthKit（iOS）读取运动记录并导入。
-  /// 失败时抛出异常，调用方负责提示用户。
+  /// 失败时抛出明确异常，调用方负责展示友好提示。
   Future<Map<String, dynamic>> syncHealthConnect({
     DateTime? start,
     DateTime? end,
@@ -71,19 +71,34 @@ class ExternalApi {
     const types = [HealthDataType.WORKOUT];
     const permissions = [HealthDataAccess.READ];
 
-    final authorized = await _health.requestAuthorization(
-      types,
-      permissions: permissions,
-    );
-    if (!authorized) {
-      throw Exception('未获得 Health Connect 授权');
+    bool authorized;
+    try {
+      authorized = await _health.requestAuthorization(
+        types,
+        permissions: permissions,
+      );
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('not installed') || msg.contains('health connect') || msg.contains('provider')) {
+        throw Exception('Health Connect 未安装或未启用。请先安装 Health Connect 应用，再返回同步。');
+      }
+      throw Exception('Health Connect 授权异常: $e');
     }
 
-    final data = await _health.getHealthDataFromTypes(
-      types: types,
-      startTime: startTime,
-      endTime: endTime,
-    );
+    if (!authorized) {
+      throw Exception('未获得 Health Connect 授权。请在系统弹窗中允许读取运动数据，或改用 JSON 导入。');
+    }
+
+    List<HealthDataPoint> data;
+    try {
+      data = await _health.getHealthDataFromTypes(
+        types: types,
+        startTime: startTime,
+        endTime: endTime,
+      );
+    } catch (e) {
+      throw Exception('Health Connect 读取运动数据失败: $e');
+    }
 
     if (data.isEmpty) {
       return {'activitiesImported': 0, 'checkinsCreated': 0};

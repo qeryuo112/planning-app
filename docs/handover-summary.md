@@ -132,6 +132,13 @@
 - [x] `flutter analyze` 通过
 - [x] **Week 24 新增**：AI 计划草案页流式生成与阶段进度展示
 - [x] **Week 24 新增**：AI 洞察页显示画像最后刷新时间并支持手动刷新
+- [x] **Week 25 新增**：运动数据导入页（单条/JSON/Health Connect）
+- [x] **Week 25 新增**：日历页 ICS 导入/导出、外部日历订阅管理弹窗
+- [x] **Week 26 新增**：Git 仓库初始化（`planning-app` 首笔 commit `630547f`）
+- [x] **Week 26 新增**：本地通知点击跳转今日页（含冷启动）
+- [x] **Week 26 新增**：Android 精确闹钟权限 `USE_EXACT_ALARM` 声明与 `PlatformException` 错误提示
+- [x] **Week 26 新增**：Health Connect 同步失败 UI 回退（警告卡片 + 改用 JSON 导入）
+- [x] **Week 26 新增**：日历订阅弹窗下拉刷新
 
 ### 3.2 已生成数据模型
 

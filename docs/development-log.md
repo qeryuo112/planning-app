@@ -2178,3 +2178,77 @@ Week 9 候选方向：
 当前为个人使用版本核心功能收尾。后续方向：
 - **Week 26：稳定性与规模化**（监控告警、性能压测、Git 仓库与 CI/CD）。
 - 商业版开发（Week 27+）：订阅/团队/数据导出、社交深度等，作为商业版备份。
+
+## Week 26：Git 初始化与 Flutter 真机体验打磨（2026-08-13）
+
+### 目标
+
+1. 为 `planning-app` 建立版本控制，结束 tar 包同步方式。
+2. 在真机使用场景中补齐 Flutter 本地通知、权限、错误回退与交互细节。
+
+### 已完成工作
+
+#### 1. Git 仓库初始化
+- 在 `planning-app` 根目录执行 `git init`。
+- 将嵌套的 `tools/flutter` 从 index 移除，并加入 `.gitignore`。
+- 提交初始 commit：`630547f init: project baseline up to Week 25`（290 files, 42033 insertions）。
+- 当前分支 `main`，工作树干净后进入后续提交。
+
+#### 2. 本地通知点击跳转（含冷启动）
+- `apps/mobile/lib/services/notification_service.dart`
+  - 新增 `getLaunchNotificationPayload()`，通过 `flutter_local_notifications` 的 `getNotificationAppLaunchDetails()` 获取因点击通知而冷启动时的 payload。
+- `apps/mobile/lib/main.dart`
+  - 应用启动后设置 `NotificationService.onNotificationTap` 回调。
+  - 检查冷启动通知 payload，若存在则在首帧渲染后通过 `navigatorKey` 导航到 `TodayScreen`。
+
+#### 3. Android 精确闹钟权限
+- `apps/mobile/android/app/src/main/AndroidManifest.xml`
+  - 保留 `SCHEDULE_EXACT_ALARM` 权限声明（Android 12+ 需要用户授权）。
+  - 新增 `USE_EXACT_ALARM` 权限声明（个人使用场景，避免部分国内 ROM 对精确闹钟的限制）。
+- `apps/mobile/lib/services/notification_service.dart`
+  - `scheduleReminder()` 捕获 `PlatformException`，识别精确闹钟权限不足时抛出更明确的提示信息。
+- `apps/mobile/lib/screens/settings_screen.dart`
+  - 已存在精确闹钟权限检查与设置页引导入口。
+
+#### 4. Health Connect 错误回退 UI
+- `apps/mobile/lib/providers/external_provider.dart`
+  - `syncHealthConnect()` 增加 try/catch，区分「未安装/未启用 Health Connect」和「未授权」两类错误，抛出中文提示。
+- `apps/mobile/lib/screens/fitness_import_screen.dart`
+  - 新增 `_healthError` 状态。
+  - 同步失败时展示橙色警告卡片，包含具体错误信息与「改用 JSON 导入」按钮。
+  - 点击按钮自动填充示例 JSON、滚动到 JSON 区域并聚焦。
+
+#### 5. 日历订阅弹窗下拉刷新
+- `apps/mobile/lib/screens/calendar_screen.dart`
+  - 在 `_CalendarSubscriptionsDialog` 的订阅列表外用 `RefreshIndicator` 包裹。
+  - 设置 `physics: AlwaysScrollableScrollPhysics()`，确保列表可下拉刷新。
+
+### 本地验证
+- `C:/Users/Administrator/flutter/bin/flutter analyze --no-pub`：No issues found。
+
+### 关键文件
+- Git：
+  - `planning-app/.git/`
+  - `planning-app/.gitignore`
+- Flutter：
+  - `planning-app/apps/mobile/lib/main.dart`
+  - `planning-app/apps/mobile/lib/services/notification_service.dart`
+  - `planning-app/apps/mobile/lib/providers/external_provider.dart`
+  - `planning-app/apps/mobile/lib/screens/fitness_import_screen.dart`
+  - `planning-app/apps/mobile/lib/screens/calendar_screen.dart`
+  - `planning-app/apps/mobile/android/app/src/main/AndroidManifest.xml`
+- 文档：
+  - `项目阶段总结.md`
+  - `planning-app/docs/handover-summary.md`
+  - `planning-app/docs/development-log.md`
+
+### 踩坑记录
+- `flutter_local_notifications` 的 `getNotificationAppLaunchDetails()` 需要在 `initialize()` 之后调用，且仅在冷启动时返回通知点击 payload。
+- `FocusNode.requestFocus()` 返回 `void`，不可 `await`。
+- 在 `AlertDialog` 的 `content` 中使用 `RefreshIndicator` 包裹 `ListView.builder` 时，需保持 `Flexible -> RefreshIndicator -> ListView` 的层级，并给 `ListView` 设置 `AlwaysScrollableScrollPhysics`。
+- 个人使用场景可在 `AndroidManifest` 同时声明 `USE_EXACT_ALARM`，但 Google Play 上架需满足其使用政策。
+
+### 遗留与后续
+- 服务器尚未重新部署本次 Flutter 改动（纯客户端改动，无需服务端部署）。
+- iOS 真机/HealthKit 实测仍需在 macOS + iPhone 环境验证。
+- 后续可继续：服务端监控告警、数据库异地备份、处理 `npm audit` 依赖漏洞。

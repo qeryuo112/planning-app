@@ -38,3 +38,6 @@ apps/mobile/.packages
 apps/mobile/build/
 apps/mobile/ios/Pods/
 apps/mobile/android/.gradle/
+
+# Tools
+/tools/flutter/

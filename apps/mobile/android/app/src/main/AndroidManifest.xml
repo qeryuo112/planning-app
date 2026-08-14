@@ -2,6 +2,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 个人使用场景：允许无需用户额外授权的精确闹钟（Google Play 上架需满足政策）。 -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <application
         android:label="planning_app_mobile"
         android:name="${applicationName}"

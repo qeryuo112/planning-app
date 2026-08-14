@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -47,6 +48,14 @@ class NotificationService {
 
     _initialized = true;
     _logger.d('本地通知服务已初始化');
+  }
+
+  /// 获取因点击通知而冷启动应用时的 payload。
+  /// 非通知启动返回 null。
+  Future<String?> getLaunchNotificationPayload() async {
+    if (!_initialized) await initialize();
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    return launchDetails?.notificationResponse?.payload;
   }
 
   Future<bool> requestPermissions() async {
@@ -121,16 +130,26 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(reminder.triggerAt, tz.local),
-      details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      payload: reminder.id,
-    );
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(reminder.triggerAt, tz.local),
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        payload: reminder.id,
+      );
+    } on PlatformException catch (e) {
+      // Android 12+ 未授权精确闹钟时常见错误码
+      final message = e.message ?? '';
+      if (message.contains('exact') || message.contains('SCHEDULE_EXACT_ALARM') || (e.code == 'exact_alarms_not_permitted')) {
+        _logger.w('精确闹钟权限不足，无法调度提醒: ${reminder.id}');
+        throw Exception('需要 Android 精确闹钟权限。请到「设置」开启后再试。');
+      }
+      rethrow;
+    }
 
     _logger.d('已调度通知: ${reminder.id} at ${reminder.triggerAt}');
   }

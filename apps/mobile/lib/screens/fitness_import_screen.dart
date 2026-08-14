@@ -19,8 +19,11 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
   final _noteController = TextEditingController();
   final _habitIdController = TextEditingController();
   final _jsonController = TextEditingController();
+  final _jsonFocusNode = FocusNode();
+  final _scrollController = ScrollController();
   DateTime _startedAt = DateTime.now();
   bool _loading = false;
+  String? _healthError;
 
   @override
   void dispose() {
@@ -32,6 +35,8 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
     _noteController.dispose();
     _habitIdController.dispose();
     _jsonController.dispose();
+    _jsonFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -114,8 +119,25 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
     }
   }
 
+  Future<void> _switchToJsonImport() async {
+    const sample = '[\n  {"activityType":"run","startedAt":"2026-08-14T07:00:00.000Z","durationSeconds":1800,"distanceKm":5}\n]';
+    if (_jsonController.text.trim().isEmpty) {
+      _jsonController.text = sample;
+    }
+    if (!mounted) return;
+    _jsonFocusNode.requestFocus();
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
   Future<void> _syncHealthConnect() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _healthError = null;
+    });
     try {
       final result = await ref.read(externalProvider).syncHealthConnect(
         habitId: _habitIdController.text.trim().isEmpty ? null : _habitIdController.text.trim(),
@@ -127,12 +149,14 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final message = e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Health Connect 同步失败: $e')),
+          SnackBar(content: Text('Health Connect 同步失败: $message')),
         );
+        setState(() => _healthError = message);
       }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -143,6 +167,7 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,6 +226,7 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
                   const Text('批量 JSON 导入', style: TextStyle(fontWeight: FontWeight.bold)),
                   TextField(
                     controller: _jsonController,
+                    focusNode: _jsonFocusNode,
                     maxLines: 6,
                     decoration: const InputDecoration(
                       hintText: '[{"activityType":"run","startedAt":"2026-08-14T07:00:00.000Z","durationSeconds":1800,"distanceKm":5}]',
@@ -218,6 +244,11 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
                   const Divider(height: 48),
                   const Text('Health Connect', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
+                  const Text(
+                    '从 Android Health Connect / iOS HealthKit 读取最近 7 天运动记录。若未安装或未授权，可改用下方 JSON 导入。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonal(
@@ -225,6 +256,49 @@ class _FitnessImportScreenState extends ConsumerState<FitnessImportScreen> {
                       child: const Text('从 Health Connect 同步'),
                     ),
                   ),
+                  if (_healthError != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      color: Colors.orange.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.warning_amber, color: Colors.orange.shade800),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Health Connect 不可用',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _healthError!,
+                              style: TextStyle(fontSize: 13, color: Colors.orange.shade900),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _switchToJsonImport,
+                                icon: const Icon(Icons.swap_horiz),
+                                label: const Text('改用 JSON 导入'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

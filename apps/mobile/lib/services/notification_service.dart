@@ -25,6 +25,12 @@ class NotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
+    if (Platform.isWindows || Platform.isLinux) {
+      _logger.i('桌面平台暂不初始化本地通知插件');
+      _initialized = true;
+      return;
+    }
+
     tz_data.initializeTimeZones();
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -53,6 +59,7 @@ class NotificationService {
   /// 获取因点击通知而冷启动应用时的 payload。
   /// 非通知启动返回 null。
   Future<String?> getLaunchNotificationPayload() async {
+    if (Platform.isWindows || Platform.isLinux) return null;
     if (!_initialized) await initialize();
     final launchDetails = await _plugin.getNotificationAppLaunchDetails();
     return launchDetails?.notificationResponse?.payload;
@@ -106,6 +113,7 @@ class NotificationService {
   }
 
   Future<void> scheduleReminder(ReminderModel reminder) async {
+    if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
 
     final id = _notificationId(reminder.id);
@@ -155,18 +163,21 @@ class NotificationService {
   }
 
   Future<void> cancelReminder(String reminderId) async {
+    if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
     await _plugin.cancel(_notificationId(reminderId));
     _logger.d('已取消通知: $reminderId');
   }
 
   Future<void> cancelAll() async {
+    if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
     await _plugin.cancelAll();
     _logger.d('已取消全部通知');
   }
 
   Future<void> showInstant(String title, String body, {String? payload}) async {
+    if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
 
     const androidDetails = AndroidNotificationDetails(

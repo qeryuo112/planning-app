@@ -15,7 +15,7 @@ class FcmService {
 
   final Logger _logger = Logger();
   final ApiClient _apiClient = ApiClient();
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messaging;
   bool _initialized = false;
 
   /// 是否已启用 Firebase。若原生未配置 Firebase，则保持 false。
@@ -23,11 +23,18 @@ class FcmService {
 
   /// 初始化 Firebase 并上传 FCM Token。
   /// 在 [main.dart] WidgetsFlutterBinding.ensureInitialized() 之后调用。
+  /// Windows/Linux 桌面端不支持 Firebase Messaging，直接跳过。
   Future<void> initialize() async {
     if (_initialized) return;
 
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      _logger.i('桌面平台暂不初始化 FCM');
+      return;
+    }
+
     try {
       await Firebase.initializeApp();
+      _messaging = FirebaseMessaging.instance;
       _logger.d('Firebase 初始化成功');
     } catch (e) {
       _logger.w('Firebase 初始化失败，远程推送将不可用：$e');
@@ -45,7 +52,9 @@ class FcmService {
 
   Future<void> _requestPermission() async {
     if (Platform.isIOS) {
-      final settings = await _messaging.requestPermission(
+      final messaging = _messaging;
+      if (messaging == null) return;
+      final settings = await messaging.requestPermission(
         alert: true,
         badge: true,
         sound: true,
@@ -55,8 +64,10 @@ class FcmService {
   }
 
   Future<void> _uploadToken() async {
+    final messaging = _messaging;
+    if (messaging == null) return;
     try {
-      final token = await _messaging.getToken();
+      final token = await messaging.getToken();
       if (token == null || token.isEmpty) {
         _logger.w('未获取到 FCM Token');
         return;
@@ -70,7 +81,9 @@ class FcmService {
   }
 
   void _listenTokenRefresh() {
-    _messaging.onTokenRefresh.listen((token) async {
+    final messaging = _messaging;
+    if (messaging == null) return;
+    messaging.onTokenRefresh.listen((token) async {
       _logger.d('FCM Token 已刷新');
       try {
         await _apiClient.post('/users/me/fcm-token', body: {'token': token});
@@ -82,6 +95,8 @@ class FcmService {
   }
 
   void _listenForegroundMessages() {
+    final messaging = _messaging;
+    if (messaging == null) return;
     FirebaseMessaging.onMessage.listen((message) {
       _logger.d('收到前台 FCM 消息: ${message.notification?.title}');
       // 个人版：先仅记录日志，后续可接入本地通知展示远程推送内容。
@@ -91,8 +106,10 @@ class FcmService {
   /// 手动获取当前 FCM Token，供调试或设置页使用。
   Future<String?> getToken() async {
     if (!_initialized) return null;
+    final messaging = _messaging;
+    if (messaging == null) return null;
     try {
-      return await _messaging.getToken();
+      return await messaging.getToken();
     } catch (e) {
       _logger.w('获取 FCM Token 失败: $e');
       return null;
@@ -102,8 +119,10 @@ class FcmService {
   /// 删除当前 Token 并通知后端清空。
   Future<void> deleteToken() async {
     if (!_initialized) return;
+    final messaging = _messaging;
+    if (messaging == null) return;
     try {
-      await _messaging.deleteToken();
+      await messaging.deleteToken();
       await _apiClient.delete('/users/me/fcm-token');
       _logger.d('FCM Token 已删除');
     } catch (e) {

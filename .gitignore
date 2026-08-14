@@ -41,3 +41,7 @@ apps/mobile/android/.gradle/
 
 # Tools
 /tools/flutter/
+
+# Release artifacts
+releases/
+

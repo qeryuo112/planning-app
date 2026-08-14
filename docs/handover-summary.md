@@ -1022,3 +1022,168 @@ flutter build windows --release
 ### 相关提交
 
 - `0490efe` chore: Windows 桌面构建与安装包打包支持
+
+
+---
+
+## 18. 测试阶段：测试方法与观察指标
+
+### 测试目标
+
+验证 Week 27 个人使用版本在 Android 真机和 Windows 桌面上的可用性、稳定性与核心功能完整性。
+
+### 测试环境
+
+| 环境 | 地址/路径 | 说明 |
+|------|-----------|------|
+| 后端 API | `https://xutaostudy.xyz/api/v1` | 已部署 Week 27 版本 |
+| Android 包 | `planning-app/releases/planning-app-week27.apk` | 57 MB，debug 签名 |
+| Windows 包 | `planning-app/releases/windows/` | 37 MB，需复制整个目录 |
+| 健康检查 | `GET https://xutaostudy.xyz/api/v1/health` | 快速验证服务端状态 |
+
+### Android 真机/模拟器测试建议
+
+#### 1. 安装与启动
+
+```bash
+# 使用 adb 安装 APK
+adb install -r planning-app/releases/planning-app-week27.apk
+
+# 启动应用
+adb shell am start -n com.example.planning_app_mobile/.MainActivity
+```
+
+#### 2. 必测核心流程（按优先级）
+
+| 优先级 | 测试项 | 预期结果 | 关注指标 |
+|--------|--------|----------|----------|
+| P0 | 注册 / 登录 | 成功进入今日页，无白屏/无网络错误 | 登录耗时、错误提示 |
+| P0 | 今日页加载 | 显示 Top 3 任务、习惯打卡、目标进度、过期任务 | 加载耗时、空状态处理 |
+| P0 | 创建目标 + AI 生成计划 | 3 分钟内返回可执行计划，可确认落库 | AI 响应时间、计划质量 |
+| P0 | 完成任务 / 习惯打卡 | 进度实时更新，连续天数增加 | 同步状态、离线回退 |
+| P0 | 离线后操作再联网 | 操作不丢失，联网后自动同步 | 操作队列、SyncEngine 重试 |
+| P1 | 收件箱增删改 | 本地优先，服务端同步 | 离线一致性 |
+| P1 | 日历事件 / ICS 导入 | 事件显示正常，导入成功 | 外部日历兼容性 |
+| P1 | 设置页保存偏好 | 时区、可用时间、精力曲线保存成功 | 嵌套 DTO 兼容性 |
+| P2 | 提醒创建与触发 | 到期后收到本地通知 | 精确闹钟权限 |
+| P2 | AI 复盘 / 画像刷新 | 返回总结/建议，不崩溃 | AI 费用、fallback |
+| P2 | 社交 / 分享 | 个人版不重点测，能打开不崩溃即可 | — |
+
+#### 3. Android 日志查看方法
+
+应用日志通过 `adb logcat` 输出，Flutter 日志会显示在 `flutter` 标签下。
+
+```bash
+# 1. 确保设备已连接
+adb devices
+
+# 2. 查看全部日志（实时）
+adb logcat
+
+# 3. 只查看 Flutter 相关日志（推荐）
+adb logcat -s flutter
+
+# 4. 只查看应用包名日志（推荐，过滤更精确）
+adb logcat --pid=$(adb shell pidof -s com.example.planning_app_mobile)
+
+# 5. 将日志保存到文件，便于后续分析
+adb logcat -v threadtime > app.log
+
+# 6. 清空旧日志后重新开始记录
+adb logcat -c
+adb logcat -v threadtime > app.log
+```
+
+常见日志关键词：
+- `flutter`：Flutter 引擎日志、未捕获异常
+- `planning_app_mobile`：Dart 端 logger 输出（如果使用 logger 包）
+- `sqflite`：本地数据库操作
+- `HttpClient` / `Dio`：网络请求（本项目使用 `http` 包）
+
+#### 4. Android 关键观察指标
+
+- **启动时间**：从点击图标到今日页可交互 < 3 秒
+- **崩溃率**：核心流程无崩溃（logcat 中无 `FATAL EXCEPTION`）
+- **网络错误**：弱网/离线下操作有 Loading 或失败提示，不白屏
+- **AI 响应时间**：`POST /ai/plan-drafts` 在 Wi-Fi 下 < 30 秒（DeepSeek 真实模型）
+- **同步一致性**：多端/离线操作后，数据最终与服务器一致
+- **电量/内存**：后台运行 30 分钟，无异常 CPU 占用或内存泄漏
+
+### Windows 桌面测试建议
+
+#### 1. 运行方式
+
+复制整个 `releases/windows/` 目录到目标 Windows 电脑，双击 `planning_app_mobile.exe`。
+
+> 注意：Windows 版当前不包含本地通知和 FCM 推送，这些属于移动端特性。
+
+#### 2. 必测核心流程
+
+| 优先级 | 测试项 | 预期结果 |
+|--------|--------|----------|
+| P0 | 双击启动 | 窗口打开，无崩溃 |
+| P0 | 登录 | 成功进入今日页 |
+| P0 | 页面切换 | 今日页、目标页、任务页、习惯页、AI 计划页等均可打开 |
+| P0 | 创建目标 + AI 生成计划 | 返回计划并确认落库 |
+| P1 | 离线操作 | SQLite 本地数据库可用，操作入队 |
+| P1 | 窗口缩放 | 不同分辨率下 UI 不溢出 |
+| P2 | 后台/前台切换 | 不崩溃，网络恢复后同步 |
+
+#### 3. Windows 日志查看方法
+
+Windows 桌面版日志输出方式：
+
+1. **命令行运行查看 stdout/stderr**：
+   ```powershell
+   cd releases\windows
+   .\planning_app_mobile.exe > app.log 2>&1
+   ```
+
+2. **Flutter 热重载/运行模式日志**（开发调试用）：
+   ```bash
+   cd planning-app/apps/mobile
+   flutter run -d windows --release
+   ```
+
+3. **Windows 事件查看器**（系统级崩溃）：
+   - 运行 `eventvwr.msc`
+   - 路径：`Windows 日志` → `应用程序`
+   - 查找来源为 `Application Error` 或 `planning_app_mobile` 的条目
+
+常见日志关键词：
+- `flutter:`：Flutter 引擎日志
+- `ERROR:flutter`：Flutter 未捕获异常
+- `LateInitializationError`、`No Firebase App`、`PlatformException`：插件/平台错误
+
+#### 4. Windows 关键观察指标
+
+- **启动时间**：双击后 5 秒内出现窗口
+- **内存占用**：静态页面约 100-150 MB，正常
+- **崩溃率**：核心流程无崩溃
+- **网络连通性**：能正常访问 `https://xutaostudy.xyz/api/v1`
+- **UI 适配**：窗口最小化/最大化后布局正常
+
+### 通用问题排查速查表
+
+| 现象 | 排查方向 | 查看位置 |
+|------|----------|----------|
+| 启动白屏/崩溃 | `main.dart` 初始化插件异常 | `adb logcat -s flutter` / Windows `app.log` |
+| 登录失败 | 网络、后端 `/health`、JWT | 后端日志 `journalctl -u planning-api` |
+| 数据不同步 | SyncEngine、WebSocket | 客户端日志 + 后端 `/sync/events` |
+| AI 无响应 | DeepSeek 余额、网络、后端日志 | 后端日志、AI 用量接口 `/ai/usage` |
+| 本地通知不触发 | 权限、精确闹钟、通知渠道 | Android 系统设置 + `adb logcat` |
+| Windows 缺少 DLL | 是否复制了整个 `windows/` 目录 | 目录完整性 |
+
+### 测试输出物
+
+测试完成后建议记录：
+1. 设备型号 / Windows 版本
+2. 网络环境（Wi-Fi / 移动数据 / 离线）
+3. 测试用例通过/失败清单
+4. 关键日志片段（崩溃、异常、慢请求）
+5. 性能数据（启动时间、AI 响应时间、内存占用）
+
+相关文件：
+- `planning-app/releases/planning-app-week27.apk`
+- `planning-app/releases/windows/`
+- 测试日志：`app.log`（Android 用 `adb logcat`，Windows 用命令行重定向）

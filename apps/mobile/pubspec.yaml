@@ -1,0 +1,36 @@
+name: planning_app_mobile
+description: 计划型 App 客户端（Flutter）
+publish_to: 'none'
+version: 0.0.1+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  http: ^1.1.2
+  flutter_riverpod: ^2.4.9
+  shared_preferences: ^2.2.2
+  intl: ^0.19.0
+  logger: ^2.0.2+1
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  socket_io_client: ^2.0.3+1
+  uuid: ^4.2.2
+  table_calendar: ^3.0.9
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.4
+  android_intent_plus: ^5.0.0
+  fl_chart: ^0.68.0
+  health: ^12.0.1
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,477 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  passwordHash        String?
+  refreshToken        String?
+  timezone            String   @default("Asia/Shanghai")
+  availableTime       Json     @default("[]")
+  energyCurve         Json     @default("{}")
+  notificationSetting Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  goals      Goal[]
+  projects   Project[]
+  habits     Habit[]
+  tasks      Task[]
+  checkins   Checkin[]
+  reviews    Review[]
+  inboxItems InboxItem[]
+  sessions            AISession[]
+  operations          AIOperation[]
+  aiDailyCostSummaries AIDailyCostSummary[]
+  events              UserEvent[]
+  syncEvents          SyncEvent[]
+  profileSnapshots    UserProfileSnapshot[]
+
+  goalSharesOwned     GoalShare[]            @relation("OwnedShares")
+  goalSharesReceived  GoalShare[]            @relation("ReceivedShares")
+  challengesCreated   Challenge[]
+  challengeParticipations ChallengeParticipant[]
+  externalActivities      ExternalActivity[]
+  calendarSubscriptions CalendarSubscription[]
+
+  @@map("users")
+}
+
+model Goal {
+  id              String   @id @default(uuid())
+  userId          String
+  parentId        String?
+  horizon         String   // long / medium / short
+  title           String
+  description     String?
+  dueDate         DateTime?
+  status          String   @default("active") // active / completed / archived
+  successCriteria Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Goal?           @relation("GoalHierarchy", fields: [parentId], references: [id])
+  children     Goal[]          @relation("GoalHierarchy")
+  milestones   Milestone[]
+  projects     Project[]
+  goalLinks    GoalHabitLink[]
+  planVersions PlanVersion[]
+  reviews      Review[]
+  shares       GoalShare[]
+
+  @@map("goals")
+}
+
+model GoalShare {
+  id                 String  @id @default(uuid())
+  goalId             String
+  ownerId            String
+  sharedWithEmail    String
+  sharedWithUserId   String?
+  permission         String  @default("view") // view / edit
+  status             String  @default("pending") // pending / accepted / declined
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  goal       Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  owner      User  @relation("OwnedShares", fields: [ownerId], references: [id], onDelete: Cascade)
+  sharedWith User? @relation("ReceivedShares", fields: [sharedWithUserId], references: [id], onDelete: SetNull)
+
+  @@index([sharedWithUserId, status])
+  @@index([goalId])
+  @@map("goal_shares")
+}
+
+model Challenge {
+  id          String   @id @default(uuid())
+  creatorId   String
+  title       String
+  description String?
+  type        String   // habit_streak / task_count / goal_progress
+  targetValue Int?
+  startDate   DateTime
+  endDate     DateTime
+  status      String   @default("active") // active / completed / archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator      User                   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  participants ChallengeParticipant[]
+
+  @@index([status, startDate])
+  @@map("challenges")
+}
+
+model ChallengeParticipant {
+  id          String   @id @default(uuid())
+  challengeId String
+  userId      String
+  score       Int      @default(0)
+  joinedAt    DateTime @default(now())
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, userId])
+  @@map("challenge_participants")
+}
+
+model Milestone {
+  id       String   @id @default(uuid())
+  goalId   String
+  title    String
+  weight   Float
+  dueDate  DateTime?
+  progress Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goal  Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@map("milestones")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  goalId      String?
+  userId      String
+  title       String
+  description String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  goal  Goal?  @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@map("projects")
+}
+
+model Task {
+  id              String    @id @default(uuid())
+  projectId       String?
+  milestoneId     String?
+  userId          String
+  title           String
+  description     String?
+  scheduledDate   DateTime?
+  status          String    @default("todo") // todo / done / skipped / postponed
+  durationMinutes Int?
+  energyLevel     String    // high / medium / low
+  weight          Float     @default(1)
+  repeatRule      Json?
+  minimumStandard String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  checkins  Checkin[]
+  events    CalendarEvent[]
+
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([userId, status])
+  @@map("tasks")
+}
+
+model Habit {
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  frequency       String   // daily / weekly / weekdays
+  preferredTime   String?
+  energyLevel     String   // high / medium / low
+  minimumStandard String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalLinks GoalHabitLink[]
+  checkins  Checkin[]
+
+  @@map("habits")
+}
+
+model GoalHabitLink {
+  goalId  String
+  habitId String
+
+  goal  Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, habitId])
+  @@map("goal_habit_links")
+}
+
+model CalendarEvent {
+  id           String    @id @default(uuid())
+  userId       String
+  taskId       String?
+  title        String
+  startAt      DateTime
+  endAt        DateTime?
+  description  String?
+  source       String?   // 事件来源，如 ics / google / outlook
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([startAt])
+  @@index([userId, startAt])
+  @@map("calendar_events")
+}
+
+model ExternalActivity {
+  id              String   @id @default(uuid())
+  userId          String
+  source          String   // 数据来源，如 garmin / keep / huawei / json
+  sourceId        String?  // 设备端原始 ID
+  activityType    String   // 运动类型：run / walk / cycle / swim 等
+  startedAt       DateTime
+  durationSeconds Int?
+  distanceKm      Float?
+  calories        Int?
+  note            String?
+  rawData         Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([source, sourceId])
+  @@map("external_activities")
+}
+
+model CalendarSubscription {
+  id             String    @id @default(uuid())
+  userId         String
+  name           String // 用户自定义名称，如「我的 Google 日历」
+  source         String // ics / google / outlook
+  url            String? // ICS 公开地址
+  accessToken    String? // OAuth access token（加密存储）
+  refreshToken   String? // OAuth refresh token（加密存储）
+  tokenExpiresAt DateTime?
+  calendarId     String? // Google/Outlook 日历 ID
+  lastSyncAt     DateTime?
+  lastSyncResult Json? // { imported, error }
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, source])
+  @@index([userId, isActive])
+  @@map("calendar_subscriptions")
+}
+
+model InboxItem {
+  id              String    @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  status          String    @default("pending") // pending / converted / dismissed
+  convertedToType String?   // goal / project / task
+  convertedToId   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("inbox_items")
+}
+
+model Checkin {
+  id             String    @id @default(uuid())
+  userId         String
+  taskId         String?
+  habitId        String?
+  date           DateTime
+  result         String    // completed / partial / skipped / makeup
+  actualMinutes  Int?
+  qualityRating  Int?
+  isMakeup       Boolean   @default(false)
+  blockReasonTag String?
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task  Task?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  habit Habit? @relation(fields: [habitId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([userId, date])
+  @@map("checkins")
+}
+
+model Reminder {
+  id          String    @id @default(uuid())
+  userId      String
+  targetType  String    // goal / task / habit
+  targetId    String
+  triggerAt   DateTime
+  repeatRule  Json?
+  channel     String    @default("push") // push / in_app / email
+  status      String    @default("pending") // pending / sent / dismissed
+  snoozeCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("reminders")
+}
+
+model PlanVersion {
+  id              String   @id @default(uuid())
+  goalId          String?
+  versionNo       Int
+  source          String   // ai / template / manual
+  planDuration    Int?     // 总天数
+  stageLength     Int?     // 每阶段天数
+  currentStage    Int?     // 当前阶段编号
+  totalStages     Int?     // 总阶段数
+  payload         Json
+  userFeedback    Json?
+  approvedAt      DateTime?
+  rollbackVersion Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  goal Goal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  @@map("plan_versions")
+}
+
+model AISession {
+  id          String        @id @default(uuid())
+  userId      String
+  contextType String        // goal / task / review
+  contextId   String?
+  summary     String?
+  turnCount   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operations AIOperation[]
+
+  @@map("ai_sessions")
+}
+
+model AIOperation {
+  id            String   @id @default(uuid())
+  sessionId     String?
+  userId        String
+  model         String
+  promptVersion String
+  inputTokens   Int
+  outputTokens  Int
+  latencyMs     Int
+  cost          Float?
+  isCached      Boolean  @default(false)
+  result        Json?
+  error         String?
+  createdAt     DateTime @default(now())
+
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session AISession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@map("ai_operations")
+}
+
+model AIDailyCostSummary {
+  id        String   @id @default(uuid())
+  userId    String
+  date      DateTime @db.Date
+  totalCost Float    @default(0)
+  callCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+  @@map("ai_daily_cost_summaries")
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  userId      String
+  goalId      String?
+  period      String   // daily / weekly
+  startDate   DateTime
+  endDate     DateTime
+  summary     String
+  insights    Json
+  nextActions Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  @@map("reviews")
+}
+
+model UserEvent {
+  id              String   @id @default(uuid())
+  userId          String
+  eventType       String
+  targetId        String?
+  metadata        Json?
+  clientTimestamp DateTime
+  serverTimestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eventType])
+  @@map("user_events")
+}
+
+model SyncEvent {
+  id              String   @id @default(uuid())
+  userId          String
+  eventType       String   // e.g. task.created, task.completed, habit.checkin, goal.created
+  targetType      String   // task / habit / goal
+  targetId        String
+  payload         Json
+  deviceId        String?
+  serverTimestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, serverTimestamp])
+  @@map("sync_events")
+}
+
+model UserProfileSnapshot {
+  id          String   @id @default(uuid())
+  userId      String
+  summary     Json
+  stats       Json
+  fallback    Boolean
+  error       String?
+  refreshedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, refreshedAt])
+  @@map("user_profile_snapshots")
+}

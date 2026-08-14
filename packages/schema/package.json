@@ -1,0 +1,18 @@
+{
+  "name": "@planning-app/schema",
+  "version": "0.0.1",
+  "description": "计划型 App 共享 Schema",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

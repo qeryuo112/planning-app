@@ -1,0 +1,648 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import '../providers/ai_provider.dart';
+
+class AiPlanDraftScreen extends ConsumerStatefulWidget {
+  final String? goalId;
+
+  const AiPlanDraftScreen({super.key, this.goalId});
+
+  @override
+  ConsumerState<AiPlanDraftScreen> createState() => _AiPlanDraftScreenState();
+}
+
+class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
+  final _inputController = TextEditingController(
+    text: '我想3个月通过英语四级，每天40分钟',
+  );
+  String? _selectedFeedback;
+  bool _approving = false;
+  int _planDuration = 30;
+  int _stageLength = 7;
+  bool _advancing = false;
+  bool _isStreaming = false;
+  String? _progressMessage;
+  List<dynamic> _templates = [];
+  String? _selectedTemplateId;
+  Map<String, dynamic>? _usage;
+  bool _loadingTemplates = true;
+  Map<String, dynamic>? _recommendedTemplate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTemplates();
+    _loadUsage();
+  }
+
+  Future<void> _loadTemplates() async {
+    final templates = await ref.read(aiDraftProvider.notifier).fetchTemplates();
+    if (mounted) {
+      setState(() {
+        _templates = templates;
+        _loadingTemplates = false;
+      });
+    }
+  }
+
+  Future<void> _loadUsage() async {
+    final usage = await ref.read(aiDraftProvider.notifier).fetchUsage();
+    if (mounted) {
+      setState(() => _usage = usage);
+    }
+  }
+
+  Future<void> _recommendTemplate() async {
+    final input = _inputController.text;
+    if (input.trim().isEmpty) return;
+    final recommendation = await ref
+        .read(aiDraftProvider.notifier)
+        .recommendTemplate(input);
+    if (mounted) {
+      setState(() => _recommendedTemplate = recommendation);
+    }
+  }
+
+  Future<void> _generate() async {
+    _selectedFeedback = null;
+    setState(() {
+      _isStreaming = true;
+      _progressMessage = '正在连接 AI…';
+    });
+
+    try {
+      final stream = ref.read(aiDraftProvider.notifier).createDraftStream(
+            _inputController.text,
+            goalId: widget.goalId,
+            templateId: _selectedTemplateId,
+            planDuration: _planDuration,
+            stageLength: _stageLength,
+          );
+
+      await for (final event in stream) {
+        if (!mounted) return;
+        switch (event) {
+          case AiDraftProgressEvent():
+            setState(() => _progressMessage = event.message ?? 'AI 生成中…');
+          case AiDraftResultEvent():
+            setState(() {
+              _isStreaming = false;
+              _progressMessage = null;
+            });
+            await _loadUsage();
+          case AiDraftDoneEvent():
+            setState(() {
+              _isStreaming = false;
+              _progressMessage = null;
+            });
+          case AiDraftErrorEvent():
+            setState(() {
+              _isStreaming = false;
+              _progressMessage = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('生成失败: ${event.error}')),
+            );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isStreaming = false;
+          _progressMessage = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _advance(String draftId) async {
+    setState(() => _advancing = true);
+    try {
+      final advanced = await ref.read(aiDraftProvider.notifier).advanceStage(draftId);
+      if (advanced != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已进入第 ${advanced['plan']?['currentStage'] ?? '?'} 阶段')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _advancing = false);
+    }
+  }
+  Future<void> _approve(String draftId) async {
+    setState(() => _approving = true);
+    try {
+      final approved = await ref.read(aiDraftProvider.notifier).approveDraft(
+            draftId,
+            feedback: _selectedFeedback,
+          );
+      if (approved != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('计划已确认，请切换到「今日」页查看任务')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _approving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final draftAsync = ref.watch(aiDraftProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('AI 生成计划')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_usage != null) _buildUsageCard(),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _inputController,
+              decoration: const InputDecoration(
+                labelText: '描述你的目标',
+                hintText: '例如：我想3个月通过英语四级，每天40分钟',
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _recommendTemplate,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('帮我推荐模板'),
+              ),
+            ),
+            _buildRecommendationBanner(),
+            _buildTemplateChips(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _planDuration,
+                    decoration: const InputDecoration(labelText: '计划总时长'),
+                    items: [7, 14, 30, 60, 90, 180, 365]
+                        .map((d) => DropdownMenuItem(value: d, child: Text('$d 天')))
+                        .toList(),
+                    onChanged: (v) => setState(() => _planDuration = v ?? 30),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _stageLength,
+                    decoration: const InputDecoration(labelText: '每阶段长度'),
+                    items: [7, 14, 30]
+                        .map((s) => DropdownMenuItem(value: s, child: Text('$s 天')))
+                        .toList(),
+                    onChanged: (v) => setState(() => _stageLength = v ?? 7),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: (_isStreaming || draftAsync.isLoading) ? null : _generate,
+                child: _isStreaming
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Text('AI 流式生成中…'),
+                        ],
+                      )
+                    : const Text('生成计划草案'),
+              ),
+            ),
+            if (_isStreaming && _progressMessage != null) ...[
+              const SizedBox(height: 16),
+              LinearProgressIndicator(
+                borderRadius: BorderRadius.circular(4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _progressMessage!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            Expanded(
+              child: draftAsync.when(
+                data: (draft) {
+                  if (draft == null) {
+                    return const Center(child: Text('输入目标后点击生成'));
+                  }
+                  final plan = draft['plan'] as Map<String, dynamic>?;
+                  if (plan == null) {
+                    return const Center(child: Text('暂无草案内容'));
+                  }
+                  return _buildPlanContent(draft);
+                },
+                loading: () => _isStreaming
+                    ? const SizedBox.shrink()
+                    : const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('生成失败: $e'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsageCard() {
+    final dailyCost = (_usage?['dailyCost'] as num?)?.toDouble() ?? 0.0;
+    final dailyLimit = (_usage?['dailyLimit'] as num?)?.toDouble() ?? 1.0;
+    final callCount = (_usage?['callCount'] as num?)?.toInt() ?? 0;
+    final percent = dailyLimit > 0 ? (dailyCost / dailyLimit).clamp(0.0, 1.0) : 0.0;
+    final color = percent > 0.8 ? Colors.red : (percent > 0.5 ? Colors.orange : Colors.green);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.trending_up, color: color, size: 20),
+                const SizedBox(width: 8),
+                Text('AI 今日用量', style: Theme.of(context).textTheme.titleSmall),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: percent,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '今日调用 $callCount 次，费用 \$${dailyCost.toStringAsFixed(4)} / \$${dailyLimit.toStringAsFixed(2)} USD',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendationBanner() {
+    if (_recommendedTemplate == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lightbulb, color: Colors.blue.shade700, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '为你推荐模板：${_recommendedTemplate!['name']}',
+              style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() {
+              _selectedTemplateId = _recommendedTemplate!['id'] as String?;
+              _planDuration = (_recommendedTemplate!['defaultPlanDuration'] as int?) ?? _planDuration;
+              _stageLength = (_recommendedTemplate!['defaultStageLength'] as int?) ?? _stageLength;
+            }),
+            child: const Text('选用'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTemplateChips() {
+    if (_loadingTemplates) {
+      return const Center(
+        child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    if (_templates.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _templates.map<Widget>((t) {
+        final id = t['id'] as String?;
+        final name = t['name'] as String? ?? '模板';
+        final selected = _selectedTemplateId == id;
+        return ChoiceChip(
+          label: Text(name),
+          selected: selected,
+          onSelected: (_) => setState(() {
+            if (selected) {
+              _selectedTemplateId = null;
+            } else {
+              _selectedTemplateId = id;
+              _planDuration = (t['defaultPlanDuration'] as int?) ?? _planDuration;
+              _stageLength = (t['defaultStageLength'] as int?) ?? _stageLength;
+            }
+          }),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPlanContent(Map<String, dynamic> draft) {
+    final plan = draft['plan'] as Map<String, dynamic>;
+    final draftId = draft['draftId'] as String?;
+    final fallback = draft['fallback'] == true;
+    final error = draft['error'] as String?;
+    final overload = draft['overload'] == true;
+    final availableWeeklyMinutes = (draft['availableWeeklyMinutes'] as num?)?.toInt();
+
+    final goal = plan['goal'] as Map<String, dynamic>?;
+    final stages = (plan['stages'] as List<dynamic>?) ?? [];
+    final habits = (plan['habits'] as List<dynamic>?) ?? [];
+    final assumptions = (plan['assumptions'] as List<dynamic>?) ?? [];
+    final warnings = (plan['warnings'] as List<dynamic>?) ?? [];
+    final load = plan['estimatedWeeklyLoad'] as Map<String, dynamic>?;
+    final currentStage = plan['currentStage'] as int? ?? 1;
+    final totalStages = plan['totalStages'] as int? ?? 1;
+    final planDuration = plan['planDuration'] as int? ?? 7;
+    final stageLength = plan['stageLength'] as int? ?? 7;
+
+    final children = <Widget>[
+      if (fallback) ...[
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.orange, size: 18),
+                  SizedBox(width: 8),
+                  Text('当前使用占位草案', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                ],
+              ),
+              if (error != null && error.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(error, style: const TextStyle(fontSize: 12, color: Colors.orange)),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (overload) ...[
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 18),
+                  SizedBox(width: 8),
+                  Text('计划负载偏高', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '当前阶段每周预计 ${load?['totalMinutes'] ?? '-'} 分钟，超过你每周 ${availableWeeklyMinutes ?? '-'} 分钟的可用时间。建议缩短计划时长或降低任务频率。',
+                style: const TextStyle(fontSize: 12, color: Colors.red),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (goal != null) ...[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('目标：${goal['title']}', style: Theme.of(context).textTheme.titleMedium),
+                Text('周期：${goal['horizon']}'),
+                if (goal['startDate'] != null) Text('开始：${goal['startDate']}'),
+                if (goal['dueDate'] != null) Text('截止：${goal['dueDate']}'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('阶段概览', style: Theme.of(context).textTheme.titleSmall),
+              Text('总时长：$planDuration 天 · 每阶段：$stageLength 天'),
+              Text('当前阶段：第 $currentStage / $totalStages 阶段'),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      ...stages.map<Widget>((s) {
+        final stageNo = s['stageNo'] as int? ?? 0;
+        final isDetailed = s['isDetailed'] as bool? ?? false;
+        final stageMilestones = (s['milestones'] as List<dynamic>?) ?? [];
+        final stageTasks = (s['tasks'] as List<dynamic>?) ?? [];
+        final tasksByDate = <String, List<dynamic>>{};
+        for (final t in stageTasks) {
+          final date = (t['date'] as String?) ?? '未排期';
+          tasksByDate.putIfAbsent(date, () => []).add(t);
+        }
+        final sortedDates = tasksByDate.keys.toList()..sort();
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '第 $stageNo 阶段 ${isDetailed ? "（当前详细）" : "（待展开）"}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    if (isDetailed) const Icon(Icons.expand_less, size: 18),
+                    if (!isDetailed) const Icon(Icons.expand_more, size: 18),
+                  ],
+                ),
+                if (s['startDate'] != null && s['endDate'] != null)
+                  Text('${s['startDate']} 至 ${s['endDate']}'),
+                ...stageMilestones.map((m) => ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.flag_outlined, size: 20),
+                      title: Text(m['title'] as String, style: const TextStyle(fontSize: 14)),
+                      subtitle: Text('截止：${m['dueDate'] ?? '-'}', style: const TextStyle(fontSize: 12)),
+                    )),
+                if (isDetailed && sortedDates.isNotEmpty) ...[
+                  const Divider(),
+                  ...sortedDates.map((date) {
+                    final displayDate = DateFormat('MM-dd EEEE').format(DateTime.tryParse(date) ?? DateTime.now());
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                          child: Text(displayDate, style: Theme.of(context).textTheme.bodySmall),
+                        ),
+                        ...tasksByDate[date]!.map((t) => ListTile(
+                              dense: true,
+                              title: Text(t['title'] as String, style: const TextStyle(fontSize: 14)),
+                              subtitle: Text(
+                                '${t['durationMinutes'] ?? '-'} 分钟 · ${t['energyLevel']} · ${t['minimumStandard'] ?? ''}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            )),
+                      ],
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+      const SizedBox(height: 12),
+      if (habits.isNotEmpty) ...[
+        Text('习惯', style: Theme.of(context).textTheme.titleSmall),
+        ...habits.map((h) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.loop),
+              title: Text(h['title'] as String),
+              subtitle: Text('${h['frequency']} · ${h['preferredTime'] ?? '任意时间'} · ${h['energyLevel']}'),
+            )),
+        const SizedBox(height: 16),
+      ],
+      if (load != null) ...[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('预计每周负载', style: Theme.of(context).textTheme.titleSmall),
+                Text('总时长：${load['totalMinutes']} 分钟'),
+                Text('高精力时段：${load['highEnergyMinutes']} 分钟'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+      if (assumptions.isNotEmpty) ...[
+        Text('假设', style: Theme.of(context).textTheme.titleSmall),
+        ...assumptions.map((a) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.lightbulb_outline),
+              title: Text(a as String),
+            )),
+        const SizedBox(height: 16),
+      ],
+      if (warnings.isNotEmpty) ...[
+        Text('警告', style: Theme.of(context).textTheme.titleSmall),
+        ...warnings.map((w) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.warning_amber, color: Colors.orange),
+              title: Text(w as String, style: const TextStyle(color: Colors.orange)),
+            )),
+        const SizedBox(height: 16),
+      ],
+      Text('对草案的反馈（可选）', style: Theme.of(context).textTheme.titleSmall),
+      Wrap(
+        spacing: 8,
+        children: [
+          '太难',
+          '时间不合适',
+          '帮我再简单点',
+        ].map((label) {
+          final selected = _selectedFeedback == label;
+          return ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => setState(() => _selectedFeedback = selected ? null : label),
+          );
+        }).toList(),
+      ),
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: (_approving || draftId == null) ? null : () => _approve(draftId),
+          child: _approving
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('确认并落库'),
+        ),
+      ),
+      if (currentStage < totalStages) ...[
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: (_advancing || draftId == null) ? null : () => _advance(draftId),
+            child: _advancing
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('进入下一阶段'),
+          ),
+        ),
+      ],
+    ];
+
+    return ListView(children: children);
+  }
+}

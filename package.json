@@ -1,0 +1,22 @@
+{
+  "name": "planning-app",
+  "version": "0.0.1",
+  "description": "计划型 App Mono-repo",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev -w services/api",
+    "build:api": "npm run build -w services/api",
+    "lint:api": "npm run lint -w services/api",
+    "test:api": "npm run test -w services/api",
+    "build:schema": "npm run build -w packages/schema",
+    "db:up": "docker-compose up -d postgres redis",
+    "db:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,11 @@
+import { IsString, IsUrl, MinLength } from "class-validator";
+
+export class CreateCalendarSubscriptionDto {
+  @IsString()
+  @MinLength(1)
+  name: string;
+
+  @IsUrl()
+  @MinLength(1)
+  url: string;
+}

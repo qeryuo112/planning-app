@@ -933,3 +933,92 @@ Week 18 完成后，原计划进入 **Week 19 商业化**（订阅/团队版/数
 - 服务器单核 ECS 直接 `nest build` 会压死 SSH 导致无响应，本次采用本地构建 `dist/` 后上传的方式。
 - 服务器重启后发现 `dist/` 目录缺失，导致 `planning-api.service` 反复启动失败；需确保上传本地构建产物后再启动服务。
 - `prisma migrate dev` 在非交互环境下不支持，使用 `prisma migrate diff` + `prisma migrate deploy` 组合完成迁移。
+
+
+---
+
+## 17. 测试阶段：安装包构建（2026-08-14）
+
+### 目标
+
+开发阶段结束后，进入测试阶段。首先完成两端安装包的构建：
+- Android APK 安装包
+- Windows 桌面 exe 可执行包
+
+### 环境准备
+
+- **Flutter**：`C:/Users/Administrator/flutter`（3.44.9，stable）
+- **Android SDK**：`C:/Users/Administrator/android-sdk`
+  - 通过 commandlinetools 安装 `platform-tools`、`platforms;android-36`、`build-tools;36.0.0`
+- **Visual Studio**：`Visual Studio 生成工具 2026`（已修复安装，Flutter Windows 工具链通过）
+- **Firebase C++ SDK**：`C:/Users/Administrator/firebase-sdk/firebase_cpp_sdk_windows`（12.7.0）
+  - 因 `cmake_minimum_required(VERSION 3.1)` 与当前 CMake 不兼容，已 patch 为 `3.5`
+  - 构建 Windows 时需设置环境变量 `FIREBASE_CPP_SDK_DIR`
+
+### 构建产物
+
+| 平台 | 路径 | 大小 | 说明 |
+|------|------|------|------|
+| Android APK | `planning-app/releases/planning-app-week27.apk` | ~57 MB | 签名使用 debug key，个人测试使用 |
+| Windows exe | `planning-app/releases/windows/planning_app_mobile.exe` + DLL + data | ~37 MB | 需连同整个 `windows/` 目录分发 |
+
+### 构建命令
+
+```bash
+# Android APK
+cd planning-app/apps/mobile
+export PUB_HOSTED_URL=https://mirrors.cloud.tencent.com/dart-pub
+export FLUTTER_STORAGE_BASE_URL=https://mirrors.cloud.tencent.com/flutter
+flutter build apk --release
+
+# Windows exe
+export FIREBASE_CPP_SDK_DIR=/c/Users/Administrator/firebase-sdk/firebase_cpp_sdk_windows
+flutter build windows --release
+```
+
+### 关键问题与修复
+
+1. **Android：health 插件要求 minSdk 26**
+   - 错误：`uses-sdk:minSdkVersion 24 cannot be smaller than version 26 declared in library [:health]`
+   - 修复：`android/app/build.gradle.kts` 中 `minSdk = 26`
+
+2. **Android：health 插件依赖 `androidx.health.connect` 要求 compileSdk 35+**
+   - 错误：`:health is currently compiled against android-34`
+   - 修复：临时 patch Pub Cache 中 `health-12.2.1/android/build.gradle` 的 `compileSdk 34 -> 36` 和 `targetSdkVersion 34 -> 36`
+   - 长期建议：升级 `health` 插件到支持 Android 36 的版本，或在项目级 `subprojects` 脚本中强制统一 compileSdk。
+
+3. **Android：`flutter_local_notifications` 需要 core library desugaring**
+   - 错误：`Dependency ':flutter_local_notifications' requires core library desugaring to be enabled`
+   - 修复：`android/app/build.gradle.kts` 中启用 `isCoreLibraryDesugaringEnabled = true` 并添加 `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")`
+
+4. **Windows：`firebase_cpp_sdk_windows` CMake 版本不兼容**
+   - 错误：`Compatibility with CMake < 3.5 has been removed from CMake`
+   - 修复：预下载 Firebase C++ SDK 12.7.0，修改 `CMakeLists.txt` 中 `cmake_minimum_required(VERSION 3.1)` 为 `3.5`，并设置 `FIREBASE_CPP_SDK_DIR` 环境变量避免重复下载。
+
+5. **Windows：`flutter_local_notifications` 不支持 Windows 桌面**
+   - 错误：`LateInitializationError: Field '_instance' has not been initialized`
+   - 原因：`flutter_local_notifications 17.2.4` 只有 Android / iOS / macOS / Linux 实现，无 Windows 平台目录。
+   - 修复：在 `NotificationService` 中对 `Platform.isWindows || Platform.isLinux` 直接返回，跳过插件初始化。
+
+6. **Windows：`firebase_messaging` 不支持 Windows 桌面**
+   - 错误：`[core/no-app] No Firebase App '[DEFAULT]' has been created`
+   - 原因：`FirebaseMessaging.instance` 在构造函数中即访问 `Firebase.app()`，Windows 无 FirebaseOptions。
+   - 修复：将 `FcmService` 中 `_messaging` 改为 `FirebaseMessaging?`，并在 `initialize()` 中判断桌面平台直接返回。
+
+### 验证结果
+
+- `flutter analyze`：No issues found ✅
+- Android APK：`build/app/outputs/flutter-apk/app-release.apk` 构建成功 ✅
+- Windows exe：`build/windows/x64/runner/Release/planning_app_mobile.exe` 构建成功，启动后无崩溃，进程持续运行 ✅
+- 服务部署：`https://xutaostudy.xyz/api/v1/health` 正常 ✅
+
+### 测试阶段后续建议
+
+1. 在 Android 真机/模拟器安装 APK，测试登录、今日页、目标、任务、习惯、AI 计划、复盘等核心流程。
+2. 在 Windows 桌面双击 `planning_app_mobile.exe`，测试登录后各页面渲染、网络请求、离线同步（Windows 有 SQLite 支持）。
+3. 注意 Windows 版当前缺失：本地通知、FCM 远程推送。这些属于移动端特性，桌面版后续如需支持需更换/补充插件。
+4. 如要继续分发，建议为 Windows 包制作安装程序（MSIX / Inno Setup / NSIS），否则需手动复制整个 `windows/` 目录。
+
+### 相关提交
+
+- `0490efe` chore: Windows 桌面构建与安装包打包支持

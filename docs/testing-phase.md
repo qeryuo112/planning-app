@@ -309,3 +309,125 @@ curl -s -X POST https://xutaostudy.xyz/api/v1/auth/register \
 
 - `health`、`device_info_plus` 等插件仍使用 Kotlin Gradle Plugin（KGP），Flutter 未来版本可能强制要求迁移到 Built-in Kotlin。当前构建为警告，不影响 APK/EXE 生成。
 - Windows 构建出现 `MSVCRT.lib(ehvecdtr.obj) : warning LNK4078` 与 CMake 弃用警告，属于 Firebase C++ SDK 与新版 CMake 的兼容性提示，生成的 exe 可正常启动。
+
+
+---
+
+## 19. Android 真机日志排查记录（2026-08-15）
+
+### 测试环境
+
+| 项目 | 内容 |
+|------|------|
+| 应用包名 | `com.example.planning_app_mobile` |
+| 测试包 | `planning-app/releases/planning-app-week27.apk` |
+| 设备 | vivo 真机（MTK/联发科 SoC，Mali GPU，Android / ARM64） |
+| 进程 PID | 4615 |
+| 采集命令 | `logcat -d -v threadtime --pid=4615` |
+| 采集时段 | 2026-08-15 17:42:25 ~ 17:48:43（约 6 分 18 秒） |
+| 原始日志 | `planning_app_mobile_full.log`（1224 行） |
+| 分析文档 | `planning_app_mobile_log_analysis.md` |
+
+### 总体结论
+
+- **稳定性达标**：连续 6 分钟运行期间 **`FATAL EXCEPTION` 出现 0 次**，无崩溃、无 ANR。
+- **核心功能可运行**：Flutter 引擎（Impeller + Vulkan）、本地化（zh-CN）、输入法弹出/收起、页面切换均正常。
+- **内存/GC 健康**：堆约 8.5 MB，原生内存峰值约 74 MB，GC 正常回收，无泄漏迹象。
+- **存在 2 个功能缺口 + 2 个可优化项**，需要在 Week 28 修复。
+
+### 发现的问题与影响
+
+| 级别 | 问题 | 现象 | 影响 | 修复优先级 |
+|------|------|------|------|------------|
+| 🔴 功能缺口 | **Firebase/FCM 推送未配置** | `FirebaseApp failed to initialize because no default options were found` | Android 端无法接收远程推送；后端 `/users/me/fcm-token` 即使收到 token 也无法真正发推送 | Week 28 P0 |
+| 🟡 功能缺失 | **HealthPlugin 注册失败** | `GeneratedPluginRegistrant: Error registering plugin health, java.lang.ClassCastException` | Health Connect / 运动数据同步不可用，用户只能手动 JSON 导入 | Week 28 P1 |
+| 🟡 低 | **Invalid resource ID 0x00000001** | 用户操作期间偶发 4 次 | 未崩溃，但可能对应图标/图表/动画资源引用异常 | Week 28 P2 |
+| 🟢 提示 | **未启用 OnBackInvokedCallback** | `OnBackInvokedCallback is not enabled for the application`（23 次） | Android 13+ 返回手势走旧式逻辑，功能正常但建议启用 | Week 28 P2 |
+| 🟢 噪音 | **BLASTBufferQueue 缓冲满载** | 684 次 `acquireNextBufferLocked: Can't acquire next buffer` | 厂商渲染背压，可能导致偶发掉帧，非应用缺陷 | 观察，不修复 |
+| 🟢 噪音 | **mali_gralloc Usage not permitted** | 16 次 Mali GPU 格式检查 | 厂商图形栈常规检查，可忽略 | 观察，不修复 |
+
+### 详细分析
+
+#### 1. Firebase/FCM 推送未配置
+
+日志片段：
+```log
+W FirebaseApp: Default FirebaseApp failed to initialize because no default options were found.
+  This usually means that com.google.gms:google-services was not applied to your gradle project.
+I FirebaseInitProvider: FirebaseApp initialization unsuccessful
+```
+
+说明：
+- 项目虽然引入了 `firebase_core`/`firebase_messaging` 并实现了 `FcmService`，但 **Android 工程未应用 `com.google.gms.google-services` 插件**，且缺少 `google-services.json`。
+- 后端 `fcm.service.ts` 与 `POST /users/me/fcm-token` 已就绪，但客户端拿不到合法 FCM token，远程推送链路无法闭环。
+
+修复方向：
+1. 在 Firebase Console 创建 Android 应用，下载 `google-services.json`。
+2. 放置到 `android/app/google-services.json`。
+3. 在 `android/build.gradle`（项目级）应用 `com.google.gms:google-services` 插件。
+4. 在 `android/app/build.gradle.kts` 底部添加 `apply(plugin = "com.google.gms.google-services")`。
+5. 重新构建 APK 并验证 `FirebaseApp initialization successful`。
+
+#### 2. HealthPlugin 注册失败（ClassCastException）
+
+日志片段：
+```log
+E GeneratedPluginRegistrant: Error registering plugin health, cachet.plugins.health.HealthPlugin
+E GeneratedPluginRegistrant: java.lang.ClassCastException
+  at a4.c.d(...)
+  at k2.l.onAttachedToActivity(...)
+  ...
+```
+
+说明：
+- `health` 插件在 `GeneratedPluginRegistrant.registerWith()` 阶段发生类型转换异常，通常与 **Flutter 嵌入版本、Activity 类型或插件版本不兼容** 有关。
+- 该异常被插件注册框架捕获，因此不会崩溃，但依赖 `health` 的 **Health Connect 同步、步数/心率读取功能将不可用**。
+
+修复方向：
+1. 检查 `health` 插件版本与当前 Flutter/Android Gradle 插件版本的兼容性矩阵。
+2. 尝试升级 `health` 到最新稳定版，或降级到与项目 `compileSdk=36` 兼容的版本。
+3. 检查 `MainActivity` 是否继承 `FlutterFragmentActivity` 而非 `FlutterActivity`（部分 health/permission_handler 插件需要 FragmentActivity）。
+4. 清理 Pub Cache 与 Gradle Cache 后重新构建，确认 `GeneratedPluginRegistrant` 不再抛异常。
+
+#### 3. Invalid resource ID 0x00000001
+
+日志片段：
+```log
+E ning_app_mobile: Invalid resource ID 0x00000001.
+```
+
+说明：
+- 资源 ID `0x00000001` 为无效值，通常出现在代码尝试加载未声明的 drawable/mipmap/asset，或 `AnimationController`/`ImageProvider` 使用了未初始化的资源句柄。
+- 出现次数少（4 次/6 分钟），未引发崩溃。
+
+修复方向：
+1. 在 Dart 侧检查是否有 `Image.asset('不存在路径')`、`Icon(Icons.??? 错误)` 或动态资源名拼写错误。
+2. 检查 `pubspec.yaml` 中 `assets` 声明是否完整（尤其图表、占位图、图标）。
+3. 检查第三方包（如图表库）是否依赖了缺失的默认资源。
+
+#### 4. OnBackInvokedCallback 未启用
+
+日志片段：
+```log
+W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+```
+
+修复方向：
+- 在 `android/app/src/main/AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
+- 这是 Android 13+ 推荐属性，启用后可预测性返回手势，不影响旧设备。
+
+### 修复验证 Checklist
+
+- [ ] 应用 `google-services` 插件并放置 `google-services.json` 后，日志中无 `FirebaseApp initialization unsuccessful`。
+- [ ] FCM Token 可正常获取并上传到后端 `/users/me/fcm-token`。
+- [ ] HealthPlugin 注册无 `ClassCastException`，`FitnessImportScreen` 的「从 Health Connect 同步」按钮可用。
+- [ ] `Invalid resource ID 0x00000001` 不再出现。
+- [ ] `OnBackInvokedCallback` 警告消失。
+- [ ] 重新真机测试 10 分钟，确认无新增崩溃或异常。
+
+### 关联文件
+
+- 原始日志：`planning_app_mobile_full.log`
+- 分析文档：`planning_app_mobile_log_analysis.md`
+- 构建产物：`planning-app/releases/planning-app-week27.apk`

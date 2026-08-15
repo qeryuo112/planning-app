@@ -623,16 +623,79 @@ AI 不再只是占位降级，能根据真实模型生成计划并生成复盘�
 
 ---
 
-## 17. 未来更新计划（Week 26+）
+## 17. Week 28：真机问题修复与推送闭环（2026-08-15 起）
 
-| Week | 方向 | 说明 |
-|---|---|---|
-| Week 26 | 稳定性与规模化 | 灰度发布、服务端监控告警、性能压测、代码仓库与 CI/CD |
-| Week 27+ | 商业化与社交深度 | 订阅/会员、团队版入口、数据导出、昵称/头像、共享目标编辑权限、实时排行榜推送 |
+### 目标
+
+修复 2026-08-15 Android 真机日志排查中发现的 P0/P1/P2 问题，完成 FCM 远程推送闭环，恢复 Health Connect 运动数据同步能力，并消除资源与兼容性警告。
+
+### 背景
+
+Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个待修复项：
+- **P0**：Firebase/FCM 未真正初始化（Android 工程未应用 `google-services` 插件）。
+- **P1**：`health` 插件注册失败（`ClassCastException`），Health Connect 同步不可用。
+- **P2**：`Invalid resource ID 0x00000001` 出现 4 次。
+- **P2**：`OnBackInvokedCallback` 未启用，Android 13+ 返回手势兼容性警告。
+
+详见 `docs/testing-phase.md` 第 19 节与 `docs/testing-plan.md` 第 7 节。
+
+### Flutter 任务
+
+- [ ] **Firebase Android 工程配置**
+  - 在 Firebase Console 创建 Android 应用并下载 `google-services.json`。
+  - 放置到 `apps/mobile/android/app/google-services.json`。
+  - 在 `android/build.gradle` 项目级添加 `com.google.gms:google-services` 插件依赖。
+  - 在 `android/app/build.gradle.kts` 底部 `apply(plugin = "com.google.gms.google-services")`。
+  - 重新构建 APK，验证日志输出 `FirebaseApp initialization successful`。
+
+- [ ] **修复 HealthPlugin 注册失败**
+  - 检查 `health` 插件版本与当前 Flutter/Android Gradle/compileSdk 36 的兼容性矩阵。
+  - 确认 `MainActivity` 是否继承 `FlutterFragmentActivity`（部分权限插件需要）。
+  - 清理 Pub Cache 与 Gradle Cache 后重新构建。
+  - 验证 `GeneratedPluginRegistrant.registerWith()` 不再抛 `ClassCastException`。
+
+- [ ] **排查 Invalid resource ID**
+  - 检查 `pubspec.yaml` 中 `assets` 声明是否完整。
+  - 检查 Dart 代码中 `Image.asset`、`Icon`、`AnimationController` 是否引用了未声明资源。
+  - 检查第三方图表/图标库是否依赖缺失默认资源。
+
+- [ ] **启用预测性返回手势**
+  - 在 `AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
+
+### 后端任务
+
+- [ ] 确认 `fcm.service.ts` 在收到合法 FCM token 后可调用 Firebase Admin SDK 发送测试消息。
+- [ ] 验证 `POST /users/me/fcm-token` 在客户端正确初始化后可正常接收并保存 token。
+
+### 验证标准
+
+- [ ] 真机启动日志无 `FirebaseApp initialization unsuccessful`。
+- [ ] 登录后 FCM token 成功上传，后端 `users.fcmToken` 字段有值。
+- [ ] HealthPlugin 注册无异常，`FitnessImportScreen`「从 Health Connect 同步」按钮可用。
+- [ ] 真机测试 10 分钟，无 `Invalid resource ID 0x00000001`。
+- [ ] 真机日志无 `OnBackInvokedCallback is not enabled` 警告。
+- [ ] `flutter analyze` 无 issues，APK 构建成功。
+
+### 风险点
+
+- [ ] 配置 Firebase 需要访问 Firebase Console 并下载 `google-services.json`；若网络受限需提前准备。
+- [ ] `health` 插件版本兼容性问题可能需要升级/降级或等待上游修复。
+- [ ] `Invalid resource ID` 可能是第三方库问题，定位耗时。
 
 ---
 
-## 18. 文档维护约定
+## 18. 未来更新计划（Week 29+）
+
+| Week | 方向 | 说明 |
+|---|---|---|
+| Week 26 | 稳定性与规模化 | 已完成：初始化 Git 仓库、本地通知真机体验改进 |
+| Week 27 | 个人版多端离线同步 | 已完成：Inbox/Calendar 本地优先、SyncEngine 重试、日历订阅自动刷新、FCM 后端 |
+| Week 28 | 真机问题修复与推送闭环 | 修复 Android FCM 初始化、HealthPlugin 注册、资源 ID、OnBackInvokedCallback |
+| Week 29+ | 商业化与社交深度 | 订阅/会员、团队版入口、数据导出、昵称/头像、共享目标编辑权限、实时排行榜推送 |
+
+---
+
+## 19. 文档维护约定
 
 1. 每个 Week 开始和结束时，必须更新本文档对应章节的 checkbox 状态。
 2. 每个 Week 结束时，必须更新 `planning-app/docs/development-log.md` 增加该 Week 章节。
@@ -641,14 +704,20 @@ AI 不再只是占位降级，能根据真实模型生成计划并生成复盘�
 
 ---
 
-## 19. 下一步行动（当前待执行）
+## 20. 下一步行动（当前待执行）
 
-Week 25 已完成本地代码与测试。当前 App 明确为**个人使用版本**；后续继续个人核心能力深化：
+Week 27 已完成本地代码与测试阶段初期构建。2026-08-15 Android 真机测试发现 FCM 未初始化、HealthPlugin 注册失败、资源 ID 无效等可修复问题。当前优先进入 **Week 28：真机问题修复与推送闭环**：
 
-1. **服务器部署 Week 25**
-   - 上传代码、应用 `CalendarSubscription` 迁移、安装新依赖、构建、重启 `planning-api`。
-   - 可选配置 Google OAuth Client ID/Secret。
-2. **Week 26：稳定性与规模化**
-   - 服务端监控告警、性能压测、初始化 Git 仓库与 CI/CD 流水线。
+1. **Week 28 修复任务**
+   - 配置 Firebase Android 工程（`google-services.json` + `com.google.gms.google-services` 插件）。
+   - 修复 `health` 插件 `ClassCastException`（版本/Activity 类型/compileSdk 兼容性）。
+   - 排查并修复 `Invalid resource ID 0x00000001`。
+   - 在 `AndroidManifest.xml` 启用 `android:enableOnBackInvokedCallback="true"`。
+   - 重新构建 APK 并在真机复测，确认日志干净、推送 token 可上传。
 
-完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 27+）** 中，作为后续商业版本的开发备份，当前不执行。
+2. **Week 28 结束后可选方向**
+   - 继续执行 `docs/testing-plan.md` 中剩余用例，输出完整测试报告。
+   - 将 Windows 安装包制作为 MSI/NSIS 安装程序，便于分发。
+   - 评估是否接入 iOS 推送/HealthKit（需 Apple Developer 账号）。
+
+完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 29+）** 中，作为后续商业版本的开发备份，当前不执行。

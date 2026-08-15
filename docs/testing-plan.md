@@ -858,7 +858,96 @@
 
 ---
 
-## 7. 通过/失败标准
+## 7. 真机测试已发现缺陷
+
+以下缺陷来自 2026-08-15 Android 真机日志排查（详见 `docs/testing-phase.md` 第 19 节）。
+
+### BUG-001 [P0] Android 端 Firebase/FCM 推送未真正初始化
+
+- **模块**：提醒/通知模块
+- **平台**：Android
+- **版本**：Week 27 APK
+- **设备**：vivo 真机（Android / ARM64）
+- **网络**：Wi-Fi
+- **复现步骤**：
+  1. 安装 APK 并启动应用。
+  2. 使用 `adb logcat --pid=$(adb shell pidof -s com.example.planning_app_mobile)` 抓取启动日志。
+  3. 观察 `FirebaseInitProvider` 输出。
+- **期望结果**：`FirebaseApp` 初始化成功，`FcmService` 可获取并上传 FCM token。
+- **实际结果**：日志显示 `Default FirebaseApp failed to initialize because no default options were found`。
+- **日志片段**：
+  ```log
+  W FirebaseApp: Default FirebaseApp failed to initialize because no default options were found.
+    This usually means that com.google.gms:google-services was not applied to your gradle project.
+  I FirebaseInitProvider: FirebaseApp initialization unsuccessful
+  ```
+- **根因**：Android 工程未应用 `com.google.gms.google-services` 插件，缺少 `google-services.json`。
+- **状态**：已确认 / 待 Week 28 修复
+
+### BUG-002 [P1] HealthPlugin 注册失败（ClassCastException）
+
+- **模块**：运动数据模块
+- **平台**：Android
+- **版本**：Week 27 APK
+- **设备**：vivo 真机（Android / ARM64）
+- **网络**：Wi-Fi
+- **复现步骤**：
+  1. 启动应用。
+  2. 查看 `GeneratedPluginRegistrant` 日志。
+- **期望结果**：`health` 插件注册成功，`FitnessImportScreen` 可调用 Health Connect。
+- **实际结果**：`GeneratedPluginRegistrant: Error registering plugin health, cachet.plugins.health.HealthPlugin`，抛出 `ClassCastException`。
+- **日志片段**：
+  ```log
+  E GeneratedPluginRegistrant: Error registering plugin health, cachet.plugins.health.HealthPlugin
+  E GeneratedPluginRegistrant: java.lang.ClassCastException
+    at a4.c.d(...)
+    at k2.l.onAttachedToActivity(...)
+  ```
+- **根因**：`health` 插件与当前 Flutter 嵌入版本 / Activity 类型 / compileSdk 不兼容。
+- **状态**：已确认 / 待 Week 28 修复
+
+### BUG-003 [P2] Invalid resource ID 0x00000001
+
+- **模块**：UI 资源加载
+- **平台**：Android
+- **版本**：Week 27 APK
+- **设备**：vivo 真机（Android / ARM64）
+- **网络**：Wi-Fi
+- **复现步骤**：
+  1. 启动应用并进行页面切换/点击操作。
+  2. 观察日志中的 `ning_app_mobile` 标签。
+- **期望结果**：无资源加载错误。
+- **实际结果**：约 6 分钟内出现 4 次 `Invalid resource ID 0x00000001`。
+- **日志片段**：
+  ```log
+  E ning_app_mobile: Invalid resource ID 0x00000001.
+  ```
+- **根因**：代码引用了未声明的 asset/drawable，或第三方库使用了无效默认资源句柄。
+- **状态**：已确认 / 待 Week 28 排查
+
+### BUG-004 [P2] 未启用 Android 13+ 预测性返回手势
+
+- **模块**：系统导航
+- **平台**：Android
+- **版本**：Week 27 APK
+- **设备**：vivo 真机（Android / ARM64）
+- **网络**：Wi-Fi
+- **复现步骤**：
+  1. 启动应用。
+  2. 查看 `WindowOnBackDispatcher` 日志。
+- **期望结果**：无兼容性警告。
+- **实际结果**：出现 23 次 `OnBackInvokedCallback is not enabled for the application`。
+- **日志片段**：
+  ```log
+  W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+  W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+  ```
+- **修复方向**：在 `AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
+- **状态**：已确认 / 待 Week 28 修复
+
+---
+
+## 8. 通过/失败标准
 
 ### 通过标准
 
@@ -879,7 +968,7 @@
 
 ---
 
-## 8. 风险与应对
+## 9. 风险与应对
 
 | 风险 | 可能性 | 影响 | 应对措施 |
 |------|--------|------|----------|
@@ -889,10 +978,13 @@
 | 测试数据污染导致结果不准 | 中 | 中 | 使用专用测试账号，必要时重置数据；记录测试数据范围 |
 | 不同 Android 厂商通知权限行为差异 | 高 | 中 | 在多个品牌真机上验证通知触发 |
 | Windows 缺少运行库导致启动失败 | 中 | 中 | 确保复制整个 `windows/` 目录，必要时安装 VC++ Redistributable |
+| Firebase/FCM 未配置导致远程推送不可用 | 已确认 | 高 | Week 28 应用 `google-services` 插件并补充 `google-services.json` |
+| `health` 插件 ClassCastException 导致运动同步失效 | 已确认 | 中 | Week 28 排查插件版本/Activity 类型兼容性 |
+| 资源 ID 无效导致偶发资源加载错误 | 已确认 | 低 | Week 28 排查 `pubspec.yaml` assets 与第三方库默认资源 |
 
 ---
 
-## 9. 测试产物
+## 10. 测试产物
 
 测试完成后输出：
 
@@ -904,9 +996,9 @@
 
 ---
 
-## 10. 附录
+## 11. 附录
 
-### 10.1 常用命令
+### 11.1 常用命令
 
 ```bash
 # 安装 APK
@@ -932,15 +1024,16 @@ cd releases\windows
 .\planning_app_mobile.exe > app.log 2>&1
 ```
 
-### 10.2 测试账号
+### 11.2 测试账号
 
 | 字段 | 值 |
 |------|-----|
 | 邮箱 | `planning-test@example.com` |
 | 密码 | `Test@123456` |
 
-### 10.3 参考文档
+### 11.3 参考文档
 
-- [`testing-phase.md`](./testing-phase.md)：测试阶段构建、测试方法、观察指标、Week 27 构建修复记录
+- [`testing-phase.md`](./testing-phase.md)：测试阶段构建、测试方法、观察指标、Week 27 构建修复记录、Android 真机日志排查
 - [`handover-summary.md`](./handover-summary.md)：项目整体交接、环境、进度与部署记录
 - [`项目阶段总结.md`](../../项目阶段总结.md)：开发阶段状态与未实现功能
+- [`development-roadmap.md`](./development-roadmap.md)：后续 Week 修复与开发计划

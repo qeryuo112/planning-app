@@ -48,3 +48,6 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+// 应用 Firebase Google Services 插件，处理 google-services.json 并初始化 Firebase SDK
+apply(plugin = "com.google.gms.google-services")

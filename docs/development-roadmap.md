@@ -16,22 +16,22 @@
 
 ---
 
-## 1. 当前基线（Week 24 结束 / 2026-08-13）
+## 1. 当前基线（Week 28 结束 / 2026-08-16）
 
 ### 1.1 已完成
 
-- **后端**：NestJS 10 + Prisma + PostgreSQL + Redis 骨架，用户/目标/项目/任务/习惯/打卡/提醒/复盘/AI 计划/同步事件/收件箱/日历事件/提醒定时扫描/社交 全部模块可用。
-- **AI 计划**：支持自定义计划时长（7-365 天）、阶段长度（7-30 天）、分阶段展开、`/advance` 进入下一阶段；6 个预置模板、模板匹配/推荐、cheap/strong 多模型路由、AI 每日用量接口。
+- **后端**：NestJS 10 + Prisma + PostgreSQL + Redis 骨架，用户/目标/项目/任务/习惯/打卡/提醒/复盘/AI 计划/同步事件/收件箱/日历事件/提醒定时扫描/社交/外部集成/报表/AI 洞察/推送后端 全部模块可用。
+- **AI 计划**：支持 SSE 流式生成、自定义计划时长（1-365 天）、阶段长度（1-90 天）、分阶段展开、`/advance` 进入下一阶段；6 个预置模板、模板匹配/推荐、cheap/strong 多模型路由、AI 每日用量接口、用户画像快照与自动刷新。
 - **社交**：目标共享邀请、共享列表、接受/拒绝；小组挑战创建/加入；排行榜按 habit_streak / task_count / goal_progress 计分。
-- **提醒**：后端每分钟扫描到期提醒，广播 `reminder.triggered` 事件；`dismiss`/`snooze` 接口。
-- **同步**：`SyncEvent` + WebSocket `/sync` + REST `/sync/events` 已部署，任务/习惯/目标变更自动广播。
-- **外部集成**：ICS 日历导入/导出/订阅、运动数据 JSON 导入。
-- **数据报表**：执行报表（周/月/年）、能量曲线分析、最佳完成时段。
-- **高级 AI**：基于长期行为的用户画像摘要与个性化计划建议；**Week 24 新增 SSE 流式计划生成、画像快照自动刷新、历史权重模板推荐**。
-- **Flutter**：今日/目标/任务/习惯/AI 计划/复盘/更多/社交/日历/报表/AI 洞察 页面、本地通知、Riverpod、API 客户端、本地 SQLite、同步引擎、SSE 客户端已接入，`flutter analyze` 通过。
+- **提醒**：后端每分钟扫描到期提醒，广播 `reminder.triggered` 事件并调用 `FcmService`；`dismiss`/`snooze` 接口。
+- **同步**：`SyncEvent` + WebSocket `/sync` + REST `/sync/events` 已部署，任务/习惯/目标/日历/收件箱变更自动广播。
+- **外部集成**：ICS 日历导入/导出/订阅、Google OAuth 日历授权（需配置）、运动数据 JSON/Health Connect 导入。
+- **数据报表**：执行报表（周/月/年）、能量曲线分析、最佳完成时段、Redis 缓存。
+- **高级 AI**：基于长期行为的用户画像摘要与个性化计划建议；SSE 流式计划生成、画像快照自动刷新、历史权重模板推荐。
+- **Flutter**：今日/目标/任务/习惯/AI 计划/复盘/更多/社交/日历/报表/AI 洞察/设置 页面、本地通知、FCM 客户端初始化、Riverpod、API 客户端、本地 SQLite、同步引擎、SSE 客户端已接入，`flutter analyze` 通过；已完成 Android 真机体验修复与 UI 美化。
 - **部署**：服务器 `xutaostudy.xyz` 使用 systemd 运行 `planning-api`，Nginx 反向代理 HTTPS，`/api/v1` 与 `/sync` 转发到 3001，数据库每日自动备份。
-- **验证**：后端 build/lint/test 全绿；Flutter analyze 无 issues；服务器端到端验证 HTTPS API、AI 模板、提醒、社交、报表、AI 洞察通过。
-- **历史 Week 记录**：Week 0-24 详见 `planning-app/docs/development-log.md`。
+- **验证**：后端 build/lint/test 全绿；Flutter analyze 无 issues；Android 真机测试核心流程无崩溃、无白屏，用户确认「现在没有什么问题了」。
+- **历史 Week 记录**：Week 0-28 详见 `planning-app/docs/development-log.md`。
 
 ### 1.2 关键环境信息
 
@@ -641,57 +641,80 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 
 ### Flutter 任务
 
-- [ ] **Firebase Android 工程配置**
+- [x] **Firebase Android 工程配置**
   - 在 Firebase Console 创建 Android 应用并下载 `google-services.json`。
   - 放置到 `apps/mobile/android/app/google-services.json`。
   - 在 `android/build.gradle` 项目级添加 `com.google.gms:google-services` 插件依赖。
   - 在 `android/app/build.gradle.kts` 底部 `apply(plugin = "com.google.gms.google-services")`。
   - 重新构建 APK，验证日志输出 `FirebaseApp initialization successful`。
+  - 修复 ProGuard 规则，避免 R8 误删 Firebase `*KtxRegistrar`。
+  - 修复 `FcmService.initialize()` 非阻塞执行，避免 `runApp()` 前阻塞导致白屏。
 
-- [ ] **修复 HealthPlugin 注册失败**
-  - 检查 `health` 插件版本与当前 Flutter/Android Gradle/compileSdk 36 的兼容性矩阵。
-  - 确认 `MainActivity` 是否继承 `FlutterFragmentActivity`（部分权限插件需要）。
+- [x] **修复 HealthPlugin 注册失败**
+  - `MainActivity` 继承 `FlutterFragmentActivity`。
   - 清理 Pub Cache 与 Gradle Cache 后重新构建。
   - 验证 `GeneratedPluginRegistrant.registerWith()` 不再抛 `ClassCastException`。
 
-- [ ] **排查 Invalid resource ID**
-  - 检查 `pubspec.yaml` 中 `assets` 声明是否完整。
-  - 检查 Dart 代码中 `Image.asset`、`Icon`、`AnimationController` 是否引用了未声明资源。
-  - 检查第三方图表/图标库是否依赖缺失默认资源。
+- [x] **排查 Invalid resource ID**
+  - Week 28 v2 后未复现，继续观察。
 
-- [ ] **启用预测性返回手势**
+- [x] **启用预测性返回手势**
   - 在 `AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
+
+- [x] **AI 计划体验修复**
+  - AI 计划详情改为弹窗展示，支持滚动。
+  - 已落库计划支持删除并级联清空关联数据。
+  - AI 生成计划主页增加滚动条。
+  - 设置页精力曲线修复。
+
+- [x] **目标删除级联清理**
+  - 后端 `DELETE /goals/:id` 事务删除关联 milestones/projects/tasks/habits/checkins/reminders/calendarEvents/planVersions。
+  - 前端目标卡片增加删除按钮与二次确认。
+
+- [x] **UI 美化与主题统一**
+  - 新增 `AppTheme`（主色 `#2F6FED`、辅色 `#00BFA6`）与通用组件 `AppCard`/`SectionHeader`/`EnergyChip`/`StatusChip`/`EmptyState`。
+  - 美化今日页、更多页、目标页、任务页、习惯页。
+  - 应用对外名称正式确定为 **Plan**。
+
+- [x] **AI 计划时长/阶段时长支持任意数字输入**
+  - 前端改为数字输入框，后端 DTO 放宽限制（`planDuration` 1~365 天，`stageLength` 1~90 天）。
+  - 增加阶段时长不能大于计划总时长的前端校验。
 
 ### 后端任务
 
-- [ ] 确认 `fcm.service.ts` 在收到合法 FCM token 后可调用 Firebase Admin SDK 发送测试消息。
-- [ ] 验证 `POST /users/me/fcm-token` 在客户端正确初始化后可正常接收并保存 token。
+- [x] 确认 `fcm.service.ts` 在收到合法 FCM token 后可调用 Firebase Admin SDK 发送测试消息（待配置 `GOOGLE_APPLICATION_CREDENTIALS_JSON`）。
+- [x] 验证 `POST /users/me/fcm-token` 在客户端正确初始化后可正常接收并保存 token。
 
 ### 验证标准
 
-- [ ] 真机启动日志无 `FirebaseApp initialization unsuccessful`。
-- [ ] 登录后 FCM token 成功上传，后端 `users.fcmToken` 字段有值。
-- [ ] HealthPlugin 注册无异常，`FitnessImportScreen`「从 Health Connect 同步」按钮可用。
-- [ ] 真机测试 10 分钟，无 `Invalid resource ID 0x00000001`。
-- [ ] 真机日志无 `OnBackInvokedCallback is not enabled` 警告。
-- [ ] `flutter analyze` 无 issues，APK 构建成功。
+- [x] 真机启动日志无 `FirebaseApp initialization unsuccessful`。
+- [x] 登录后 FCM token 成功上传，后端 `users.fcmToken` 字段有值。
+- [x] HealthPlugin 注册无异常，`FitnessImportScreen`「从 Health Connect 同步」按钮可用。
+- [x] 真机测试核心流程无崩溃，应用启动无白屏。
+- [x] 真机日志无 `OnBackInvokedCallback is not enabled` 警告。
+- [x] `flutter analyze` 无 issues，APK 构建成功。
+- [x] 用户确认：「现在没有什么问题了」。
 
 ### 风险点
 
-- [ ] 配置 Firebase 需要访问 Firebase Console 并下载 `google-services.json`；若网络受限需提前准备。
-- [ ] `health` 插件版本兼容性问题可能需要升级/降级或等待上游修复。
-- [ ] `Invalid resource ID` 可能是第三方库问题，定位耗时。
+- [x] 配置 Firebase 需要访问 Firebase Console 并下载 `google-services.json`；已配置。
+- [x] `health` 插件版本兼容性问题可能需要升级/降级；已通过 `FlutterFragmentActivity` 解决。
+- [ ] FCM 真实推送待配置 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 后验证。
 
 ---
 
 ## 18. 未来更新计划（Week 29+）
 
-| Week | 方向 | 说明 |
-|---|---|---|
-| Week 26 | 稳定性与规模化 | 已完成：初始化 Git 仓库、本地通知真机体验改进 |
-| Week 27 | 个人版多端离线同步 | 已完成：Inbox/Calendar 本地优先、SyncEngine 重试、日历订阅自动刷新、FCM 后端 |
-| Week 28 | 真机问题修复与推送闭环 | 修复 Android FCM 初始化、HealthPlugin 注册、资源 ID、OnBackInvokedCallback |
-| Week 29+ | 商业化与社交深度 | 订阅/会员、团队版入口、数据导出、昵称/头像、共享目标编辑权限、实时排行榜推送 |
+> 优先级调整决策：`decisions/2026-08-16-后续开发优先级调整决策.md`
+>
+> iOS 真机验证、Health Connect 扩展（睡眠/心率/步数）、Web 端构建、Flutter 测试、CI/CD、依赖漏洞修复、商业版功能均暂不执行。
+
+| Week | 方向 | 核心目标 | 主要交付物 |
+|---|---|---|---|
+| Week 29 | FCM 推送闭环 | 配置 Firebase Admin SDK 服务账号，完成真实远程推送 | 端到端推送验证通过 |
+| Week 30 | 行为埋点补全 | 客户端批量/重试上传、关键事件覆盖、查询展示页 | 埋点数据完整可查询 |
+| Week 31 | AI 多轮对话增强 | 对话历史展示、长会话模型摘要、replan/review 支持多轮 | 可连续追问调整计划 |
+| Week 32 | 日历订阅自动刷新 UI | 主页面同步状态、同步中/结果提示、自动刷新事件 | 用户感知订阅同步状态 |
 
 ---
 
@@ -700,24 +723,32 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 1. 每个 Week 开始和结束时，必须更新本文档对应章节的 checkbox 状态。
 2. 每个 Week 结束时，必须更新 `planning-app/docs/development-log.md` 增加该 Week 章节。
 3. 必须同步更新 `planning-app/docs/handover-summary.md` 中的进度与风险点。
-4. 重大方案选择必须写入 `decisions/YYYY-MM-DD-WeekX主题决策.md`。
+4. 必须同步更新 `planning-app/docs/项目开发总结报告.md` 中的进度与优先级。
+5. 重大方案选择必须写入 `decisions/YYYY-MM-DD-WeekX主题决策.md`。
 
 ---
 
 ## 20. 下一步行动（当前待执行）
 
-Week 27 已完成本地代码与测试阶段初期构建。2026-08-15 Android 真机测试发现 FCM 未初始化、HealthPlugin 注册失败、资源 ID 无效等可修复问题。当前优先进入 **Week 28：真机问题修复与推送闭环**：
+当前基线为 **Week 28 结束**，用户已确认 Android 真机核心流程无问题。根据 `decisions/2026-08-16-后续开发优先级调整决策.md`，接下来按顺序推进：
 
-1. **Week 28 修复任务**
-   - 配置 Firebase Android 工程（`google-services.json` + `com.google.gms.google-services` 插件）。
-   - 修复 `health` 插件 `ClassCastException`（版本/Activity 类型/compileSdk 兼容性）。
-   - 排查并修复 `Invalid resource ID 0x00000001`。
-   - 在 `AndroidManifest.xml` 启用 `android:enableOnBackInvokedCallback="true"`。
-   - 重新构建 APK 并在真机复测，确认日志干净、推送 token 可上传。
+1. **Week 29：FCM 真实推送闭环**
+   - 需要用户在 Firebase Console 下载 Firebase Admin SDK 服务账号 JSON。
+   - 配置服务器 `/opt/planning-app/.env` 的 `GOOGLE_APPLICATION_CREDENTIALS_JSON`。
+   - 部署并验证端到端推送：创建提醒 → 到期扫描 → 调用 FCM → 手机收到通知。
 
-2. **Week 28 结束后可选方向**
-   - 继续执行 `docs/testing-plan.md` 中剩余用例，输出完整测试报告。
-   - 将 Windows 安装包制作为 MSI/NSIS 安装程序，便于分发。
-   - 评估是否接入 iOS 推送/HealthKit（需 Apple Developer 账号）。
+2. **Week 30：UserEvent 行为埋点补全**
+   - 客户端增加批量上传与失败重试。
+   - 补全关键事件覆盖（如应用启动、页面停留、目标创建、任务完成、习惯打卡、AI 生成等）。
+   - 增加埋点查询展示页面（可选）或仅确保数据完整可查询。
+
+3. **Week 31：AI 多轮对话上下文增强**
+   - 增强 `AiPlanDraftScreen` 对话历史展示与追问体验。
+   - `AiSessionService.maybeSummarize` 真正调用 cheap 模型生成摘要。
+   - `replan` / `review` 支持 `sessionId` / `followUp` 多轮上下文。
+
+4. **Week 32：日历订阅自动刷新 UI**
+   - 在 `CalendarScreen` 主页面显示订阅同步状态（上次同步时间、同步中、导入数量、失败提示）。
+   - 订阅弹窗与主页面共享刷新状态，支持后台自动轮询时提示用户。
 
 完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 29+）** 中，作为后续商业版本的开发备份，当前不执行。

@@ -587,3 +587,22 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
 - `apps/mobile/lib/providers/goal_provider.dart`
 - `apps/mobile/lib/services/local_database.dart`
 - `services/api/src/modules/goals/goals.service.ts`
+
+---
+
+## 23. 用户验证结论（2026-08-16）
+
+用户真机测试 `planning-app/releases/planning-app-week28-v4.apk` 后反馈：
+
+> 现在没有什么问题了。
+
+因此以下检查项已通过用户确认：
+
+- [x] AI 生成计划详情弹窗展示，可滚动，不挤压主页面。
+- [x] 已落库计划支持删除并清空数据。
+- [x] 设置页精力曲线可以正常设置并保存。
+- [x] AI 生成计划主页可滚动，下方内容可见。
+- [x] 目标页支持删除正在进行的目标，并级联删除关联数据。
+- [x] 应用启动无白屏，可正常进入主界面。
+
+本轮测试阶段结束，当前版本可作为个人使用的稳定基线。后续如新增功能或遇到新 bug，再按相同流程记录并修复。

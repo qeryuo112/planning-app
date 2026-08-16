@@ -2681,3 +2681,50 @@ Week 9 候选方向：
 - `C:/Users/Administrator/flutter/bin/flutter analyze`：No issues found。
 - Flutter 产物：`planning-app/releases/plan-week28.apk`（61.6 MB）。
 - 安装后系统桌面与应用管理器显示名称为 **Plan**。
+
+---
+
+## Week 29：FCM 真实推送配置（2026-08-16）
+
+### 目标
+
+配置后端 Firebase Admin SDK，使 `FcmService` 能真正初始化并调用 FCM 发送推送；为后续真机端到端验证做准备。
+
+### 背景
+
+Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM token，但后端 `/opt/planning-app/.env` 中缺少 `GOOGLE_APPLICATION_CREDENTIALS_JSON`，`FcmService` 在 constructor 中因无凭据而降级为不可用。
+
+### 已完成工作
+
+1. **接收并处理 Firebase 服务账号私钥**
+   - 用户把 `planingapp-2521b-firebase-adminsdk-fbsvc-9e056f3e26.json` 放到工作目录。
+   - 尝试直接以 JSON 字符串形式写入 `/opt/planning-app/.env`，因 systemd `EnvironmentFile` 对 `\n` 转义解析不友好，出现 `Failed to parse private key`。
+
+2. **修改 `FcmService` 支持文件路径配置**
+   - 文件：`services/api/src/modules/notifications/fcm.service.ts`
+   - 变更：读取 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 后，若值不以 `{` 开头，则按绝对路径读取 JSON 文件内容；日志级别从 `debug` 提升到 `log`，方便 systemd 日志中确认初始化状态。
+   - 同步更新 `services/api/.env.example` 注释，说明推荐文件路径方式。
+
+3. **服务器部署**
+   - 将 Firebase 服务账号 JSON 文件上传到 `/opt/planning-app/firebase-service-account.json`，权限设为 `600`。
+   - 更新 `/opt/planning-app/.env`：`GOOGLE_APPLICATION_CREDENTIALS_JSON=/opt/planning-app/firebase-service-account.json`。
+   - 本地构建 `services/api`，上传 `dist/` 到服务器并重启 `planning-api.service`。
+
+4. **验证后端初始化**
+   - 日志确认：`FcmService` 输出 `FCM 初始化完成`，`NotificationsModule dependencies initialized`。
+   - 健康检查：`GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok"}` ✅
+   - 数据库检查：测试账号 `planning-test@example.com` 当前 `fcmToken` 为空，待真机登录后上传。
+
+### 关键文件
+
+- `services/api/src/modules/notifications/fcm.service.ts`
+- `services/api/.env.example`
+- `/opt/planning-app/firebase-service-account.json`（服务器本地，未入 Git）
+- `/opt/planning-app/.env`（服务器本地，未入 Git）
+
+### 遗留与后续
+
+- 需在 Android 真机登录测试账号（`planning-test@example.com` / `Test@123456`），确认 `users.fcmToken` 字段被写入。
+- 创建一条提醒并等待到期（或设置过去的 `triggerAt`），验证手机能收到 FCM 通知。
+- 若国内网络访问 Firebase 不稳定，可能需要进一步观察推送延迟与失败率。
+

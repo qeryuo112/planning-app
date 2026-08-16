@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { readFileSync } from "node:fs";
 import {
   initializeApp,
   cert,
@@ -24,7 +25,7 @@ export class FcmService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaClient,
   ) {
-    const credentialsJson = this.configService.get<string>(
+    let credentialsJson = this.configService.get<string>(
       "GOOGLE_APPLICATION_CREDENTIALS_JSON",
     );
 
@@ -35,17 +36,29 @@ export class FcmService {
       return;
     }
 
+    // 支持直接配置 JSON 字符串，或配置 JSON 文件路径
+    if (!credentialsJson.trim().startsWith("{")) {
+      try {
+        credentialsJson = readFileSync(credentialsJson.trim(), "utf8");
+      } catch (fileErr) {
+        this.logger.error(
+          `读取 FCM 凭据文件失败: ${(fileErr as Error).message}`,
+        );
+        return;
+      }
+    }
+
     try {
       const credential = cert(JSON.parse(credentialsJson));
       this.app = initializeApp({
         credential,
       });
-      this.logger.debug("FCM 初始化完成");
+      this.logger.log("FCM 初始化完成");
     } catch (err) {
       // 可能已存在默认 app，尝试复用
       try {
         this.app = getApp();
-        this.logger.debug("FCM 复用已有默认 app");
+        this.logger.log("FCM 复用已有默认 app");
       } catch {
         this.logger.error(
           `FCM 初始化失败: ${(err as Error).message}`,

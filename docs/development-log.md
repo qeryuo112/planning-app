@@ -3077,3 +3077,34 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - FCM 服务端推送已可走出服务器；真机是否收到依赖设备当前 token 是否有效。如未收到，请使用当前登录设备的 FCM token 替换测试账号 `fcmToken` 后重新验证。
 - 代理节点长期稳定性需观察；若后续失效，可替换订阅节点或改用其他代理。
 - 复盘历史目前仅在当前会话内存中保留，切换目标/退出后清空；如需跨会话保留，可在后续版本通过后端 `GET /ai/sessions/:id/messages` 接口读取持久化历史。
+
+---
+
+## FCM 通知展示修复（2026-08-16）
+
+### 问题
+
+服务端 FCM 远程推送已能通过代理发到 Google（mihomo 日志显示 `fcm.googleapis.com:443` 走代理），但真机没有弹出通知。
+
+根因：Flutter 端 `FcmService` 仅在前台/后台记录日志，没有把 FCM 消息转成本地通知；`NotificationService` 也未显式创建 Android 通知渠道，导致通知可能被系统静默。
+
+### 修复内容
+
+- `apps/mobile/lib/services/fcm_service.dart`
+  - 前台 `onMessage` 收到带 `notification` 的消息时，调用 `NotificationService.showInstant(...)` 展示本地通知。
+  - 后台 `firebaseMessagingBackgroundHandler` 同样展示本地通知，并初始化 `WidgetsFlutterBinding`。
+- `apps/mobile/lib/services/notification_service.dart`
+  - 初始化时显式创建 Android 通知渠道 `reminder_channel`（高重要性、响铃、震动）。
+- `apps/mobile/lib/main.dart`
+  - 在 `runApp` 之前注册 `FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler)`。
+
+### 验证
+
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- `flutter build apk --release`：成功，`planning-app/releases/plan-fcm-notification.apk`（约 61.9 MB）。
+- 服务端无需改动，继续使用 `/opt/mihomo` 代理。
+
+### 关键产物
+
+- `planning-app/releases/plan-fcm-notification.apk`
+

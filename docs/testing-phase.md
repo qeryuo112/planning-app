@@ -299,11 +299,19 @@ curl -s -X POST https://xutaostudy.xyz/api/v1/auth/register \
 
 ### 构建产物
 
-- Android APK：`planning-app/releases/planning-app-week27.apk`（约 61.4 MB）
-   - 构建命令：`flutter build apk --release`
-- Windows 桌面包：`planning-app/releases/windows/`（约 28 MB）
-   - 构建命令：`flutter build windows --release`
-   - 运行方式：复制整个 `releases/windows/` 目录到目标机器，双击 `planning_app_mobile.exe`。
+| 平台 | 路径 | 大小 | 说明 |
+|------|------|------|------|
+| Android APK (Week 27) | `planning-app/releases/planning-app-week27.apk` | ~61.4 MB | 修复构建前产物，debug 签名 |
+| Android APK (Week 28) | `planning-app/releases/planning-app-week28.apk` | ~61.4 MB | 修复 FCM/Health/OnBack 后产物，debug 签名 |
+| Windows exe | `planning-app/releases/windows/planning_app_mobile.exe` + DLL + data | ~28 MB | 需连同整个 `windows/` 目录分发 |
+
+> 构建命令：
+> ```bash
+> cd planning-app/apps/mobile
+> export PUB_HOSTED_URL=https://mirrors.cloud.tencent.com/dart-pub
+> export FLUTTER_STORAGE_BASE_URL=https://mirrors.cloud.tencent.com/flutter
+> flutter build apk --release
+> ```
 
 ### 已知警告（不影响当前功能）
 

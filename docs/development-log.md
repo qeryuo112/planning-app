@@ -2462,12 +2462,18 @@ Week 9 候选方向：
    - 创建 `decisions/2026-08-15-Week28真机问题修复决策.md`，记录问题、修复方案与 `google-services.json` 获取步骤。
    - 更新 `docs/testing-phase.md` 第 19 节、 `docs/testing-plan.md` 第 7 节、 `docs/项目阶段总结.md` 与 `docs/development-roadmap.md` Week 28 计划。
 
-### 待验证
+### 本地验证
 
-- 重新构建 APK 并在真机安装测试。
-- 确认日志中无 `FirebaseApp initialization unsuccessful`。
+- `C:/Users/Administrator/flutter/bin/flutter build apk --release`：成功 ✅
+- 产物：`build/app/outputs/flutter-apk/app-release.apk`（61.4 MB）
+- 已复制到：`planning-app/releases/planning-app-week28.apk`
+
+### 待真机验证
+
+- 安装 `planning-app-week28.apk` 后启动，确认日志中无 `FirebaseApp initialization unsuccessful`。
 - 确认 `GeneratedPluginRegistrant` 无 health 插件异常。
 - 观察 `Invalid resource ID 0x00000001` 是否仍然出现。
+- 确认 `OnBackInvokedCallback` 警告已消失。
 
 ### 关键文件
 
@@ -2480,5 +2486,5 @@ Week 9 候选方向：
 ### 遗留与后续
 
 - 若本次构建后 `Invalid resource ID 0x00000001` 仍存在，将进一步排查 `pubspec.yaml` assets 与第三方库默认资源。
-- 需要真机重新抓取 10 分钟日志，验证修复效果。
-- 构建产物（Week 28 APK）将保存到 `planning-app/releases/planning-app-week28.apk`。
+- 需要真机重新抓取 5~10 分钟日志，验证修复效果。
+- 构建产物：`planning-app/releases/planning-app-week28.apk`。

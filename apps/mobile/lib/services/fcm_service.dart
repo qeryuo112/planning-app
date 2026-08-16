@@ -42,12 +42,15 @@ class FcmService {
     }
 
     await _requestPermission();
-    await _uploadToken();
     _listenTokenRefresh();
     _listenForegroundMessages();
 
     _initialized = true;
     _logger.d('FCM 服务已初始化');
+
+    // 获取并上传 FCM Token 可能依赖网络与 Firebase Installations，
+    // 放在后台执行，避免阻塞应用启动导致白屏。
+    Future.microtask(() => _uploadToken());
   }
 
   Future<void> _requestPermission() async {

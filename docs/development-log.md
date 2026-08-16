@@ -2476,9 +2476,10 @@ Week 9 候选方向：
 
 ### 本地验证
 
-- `C:/Users/Administrator/flutter/bin/flutter build apk --release`：成功 ✅（第 2 次构建，已包含白屏修复）
-- 产物：`build/app/outputs/flutter-apk/app-release.apk`（约 61.4 MB）
-- 已复制到：`planning-app/releases/planning-app-week28.apk`（第 2 版）
+- `C:/Users/Administrator/flutter/bin/flutter build apk --release`：成功 ✅（第 2 次构建，已包含白屏修复与 ProGuard 规则）
+- 产物：`build/app/outputs/flutter-apk/app-release.apk`（61.6 MB）
+- 已复制到：`planning-app/releases/planning-app-week28.apk`（第 2 版，覆盖第 1 版）
+- 构建时间：约 85 秒
 
 ### 待真机验证
 

@@ -439,3 +439,66 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
 - 原始日志：`planning_app_mobile_full.log`
 - 分析文档：`planning_app_mobile_log_analysis.md`
 - 构建产物：`planning-app/releases/planning-app-week27.apk`
+
+
+---
+
+## 20. Week 28 真机复测记录（2026-08-16）
+
+### 测试环境
+
+| 项目 | 内容 |
+|------|------|
+| 应用包名 | `com.example.planning_app_mobile` |
+| 测试包 | `planning-app/releases/planning-app-week28.apk`（第 1 版） |
+| 设备 | vivo 真机（MTK/联发科 SoC，Mali GPU，Android / ARM64） |
+| 进程 PID | 9977 |
+| 采集命令 | `logcat -d -v threadtime --pid=9977` |
+| 采集时段 | 2026-08-16 15:12:13 ~ 15:12:46（约 33 秒） |
+| 原始日志 | `planning_app_mobile_week28_full.log`（117 行） |
+
+### 测试现象
+
+- 点击应用图标后，**只显示白屏，未进入主界面**。
+- 日志中无 `FATAL EXCEPTION`，进程未崩溃。
+- `FirebaseApp initialization successful` 已出现，说明 Firebase 配置已生效。
+- 出现新的 `ComponentDiscovery` 警告：
+  ```log
+  W ComponentDiscovery: l4.l: Could not instantiate com.google.firebase.installations.FirebaseInstallationsKtxRegistrar
+  W ComponentDiscovery: Caused by: java.lang.NoSuchMethodException: ...FirebaseInstallationsKtxRegistrar.<init> []
+  W ComponentDiscovery: l4.l: Could not instantiate com.google.firebase.messaging.FirebaseMessagingKtxRegistrar
+  W ComponentDiscovery: Caused by: java.lang.NoSuchMethodException: ...FirebaseMessagingKtxRegistrar.<init> []
+  ```
+
+### 根因分析
+
+1. **白屏**：`main.dart` 在 `runApp()` 前 `await FcmService().initialize()`，其中 `_uploadToken()` 需要等待 Firebase Installations 与网络，在真机上可能长时间阻塞，导致应用首帧无法渲染。
+2. **ComponentDiscovery 警告**：R8 代码压缩后，Firebase Kotlin 扩展库的 `*KtxRegistrar` 无参构造器被移除或混淆，组件发现时反射失败。
+
+### 修复措施
+
+1. **FcmService 非阻塞初始化**
+   - 文件：`apps/mobile/lib/services/fcm_service.dart`
+   - 将 `_uploadToken()` 改为 `Future.microtask(() => _uploadToken())`，在 `runApp()` 之后后台执行。
+   - 保留 Firebase 同步初始化、Token 刷新监听、前台消息监听。
+
+2. **Firebase ProGuard 规则**
+   - 新增文件：`apps/mobile/android/app/proguard-rules.pro`
+   - 添加 `-keep class com.google.firebase.** { *; }` 等规则，避免 R8 误删 Firebase 组件注册器。
+   - 在 `app/build.gradle.kts` 的 `release` 构建类型中启用 `isMinifyEnabled` 并引用 `proguard-rules.pro`。
+
+### 修复验证 Checklist（第 2 版 APK 待验证）
+
+- [ ] 点击应用图标后正常进入登录/今日页，不再白屏。
+- [ ] 日志中无 `ComponentDiscovery: Could not instantiate` 警告。
+- [ ] `FirebaseApp initialization successful` 出现。
+- [ ] `HealthPlugin` 无 `ClassCastException`。
+- [ ] `OnBackInvokedCallback` 警告消失。
+- [ ] `Invalid resource ID 0x00000001` 未出现或偶发。
+- [ ] 运行 5~10 分钟无崩溃。
+
+### 关联文件
+
+- 原始日志：`planning_app_mobile_week28_full.log`
+- 修复后构建产物：`planning-app/releases/planning-app-week28.apk`（第 2 版）
+- 代码变更：`apps/mobile/lib/services/fcm_service.dart`、`apps/mobile/android/app/build.gradle.kts`、`apps/mobile/android/app/proguard-rules.pro`

@@ -943,7 +943,31 @@
   W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
   ```
 - **修复方向**：在 `AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
-- **状态**：已确认 / 待 Week 28 修复
+- **状态**：已修复 ✅
+
+### BUG-005 [P0] 配置 Firebase 后启动白屏
+
+- **模块**：启动 / FCM 初始化
+- **平台**：Android
+- **版本**：Week 28 APK（第 1 版）
+- **设备**：vivo 真机（Android / ARM64）
+- **网络**：Wi-Fi
+- **复现步骤**：
+  1. 配置 `google-services.json` 与 `google-services` 插件后构建 release APK。
+  2. 安装并启动应用。
+- **期望结果**：正常进入登录/今日页。
+- **实际结果**：应用只显示白屏，无法进入主界面。
+- **日志片段**：
+  ```log
+  W ComponentDiscovery: l4.l: Could not instantiate com.google.firebase.installations.FirebaseInstallationsKtxRegistrar
+  W ComponentDiscovery: Caused by: java.lang.NoSuchMethodException: ...FirebaseInstallationsKtxRegistrar.<init> []
+  W ComponentDiscovery: l4.l: Could not instantiate com.google.firebase.messaging.FirebaseMessagingKtxRegistrar
+  ```
+- **根因**：`main.dart` 在 `runApp()` 前同步 `await FcmService().initialize()`，其中 `_uploadToken()` 等待 Firebase Installations，阻塞首帧渲染；同时 R8 可能混淆 Firebase Ktx Registrar 构造器。
+- **修复方向**：
+  1. `FcmService.initialize()` 中将 `_uploadToken()` 改为 `Future.microtask` 后台执行。
+  2. 新增 `proguard-rules.pro` 保留 `com.google.firebase.**` 类与构造器，并 `-dontwarn com.google.android.play.core.**`。
+- **状态**：已修复 / 待 APK 验证
 
 ---
 

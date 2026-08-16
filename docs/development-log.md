@@ -2462,16 +2462,30 @@ Week 9 候选方向：
    - 创建 `decisions/2026-08-15-Week28真机问题修复决策.md`，记录问题、修复方案与 `google-services.json` 获取步骤。
    - 更新 `docs/testing-phase.md` 第 19 节、 `docs/testing-plan.md` 第 7 节、 `docs/项目阶段总结.md` 与 `docs/development-roadmap.md` Week 28 计划。
 
+5. **真机验证 Week 28 APK 出现白屏（2026-08-16）**
+   - 现象：安装 Week 28 APK 后点击应用图标，只显示白屏，无法进入主界面。
+   - 真机日志分析：
+     - 无 `FATAL EXCEPTION`。
+     - `FirebaseApp initialization successful`（Firebase 配置已生效）。
+     - 出现 `ComponentDiscovery: Could not instantiate com.google.firebase.installations.FirebaseInstallationsKtxRegistrar` / `FirebaseMessagingKtxRegistrar` 警告（R8 反射问题）。
+     - 推测根因：`main.dart` 中 `await FcmService().initialize()` 阻塞了 `runApp()`，而 `getToken()` 因 Firebase Installations 初始化延迟导致长时间等待，最终表现为白屏。
+   - 修复方案：
+     - 在 `FcmService.initialize()` 中，仅同步初始化 Firebase、设置监听器，将 `_uploadToken()` 改为 `Future.microtask(() => _uploadToken())` 后台执行，避免阻塞应用启动。
+     - 新增 `apps/mobile/android/app/proguard-rules.pro`，添加 Firebase keep 规则，避免 R8 移除 `Firebase*KtxRegistrar` 的无参构造器。
+     - 在 `app/build.gradle.kts` 的 `release` 构建类型中显式启用 `isMinifyEnabled` 并引用 `proguard-rules.pro`。
+
 ### 本地验证
 
-- `C:/Users/Administrator/flutter/bin/flutter build apk --release`：成功 ✅
-- 产物：`build/app/outputs/flutter-apk/app-release.apk`（61.4 MB）
-- 已复制到：`planning-app/releases/planning-app-week28.apk`
+- `C:/Users/Administrator/flutter/bin/flutter build apk --release`：成功 ✅（第 2 次构建，已包含白屏修复）
+- 产物：`build/app/outputs/flutter-apk/app-release.apk`（约 61.4 MB）
+- 已复制到：`planning-app/releases/planning-app-week28.apk`（第 2 版）
 
 ### 待真机验证
 
-- 安装 `planning-app-week28.apk` 后启动，确认日志中无 `FirebaseApp initialization unsuccessful`。
+- 安装新版 `planning-app-week28.apk` 后启动，确认不再白屏，可进入登录/今日页。
+- 确认日志中无 `FirebaseApp initialization unsuccessful`。
 - 确认 `GeneratedPluginRegistrant` 无 health 插件异常。
+- 观察 `ComponentDiscovery` 警告是否减少或消失。
 - 观察 `Invalid resource ID 0x00000001` 是否仍然出现。
 - 确认 `OnBackInvokedCallback` 警告已消失。
 
@@ -2481,6 +2495,8 @@ Week 9 候选方向：
 - `apps/mobile/android/app/src/main/kotlin/com/example/planning_app_mobile/MainActivity.kt`
 - `apps/mobile/android/settings.gradle.kts`
 - `apps/mobile/android/app/build.gradle.kts`
+- `apps/mobile/android/app/proguard-rules.pro`（新增）
+- `apps/mobile/lib/services/fcm_service.dart`
 - `decisions/2026-08-15-Week28真机问题修复决策.md`
 
 ### 遗留与后续

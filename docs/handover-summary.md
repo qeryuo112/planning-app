@@ -272,13 +272,16 @@
 
 > 本章节记录服务器最近一次确认状态，compact 后恢复上下文时以本记录为准，并再用命令复核。
 
-- **记录时间**：2026-08-14 18:25 CST（Week 27 部署完成后）
+- **记录时间**：2026-08-16 18:25 CST（Week 29 FCM 配置完成后）
 - **systemd 服务**：`planning-api.service`
-  - 状态：`active (running)`（基于 Week 27 部署版本）
+  - 状态：`active (running)`（基于 Week 29 本地构建 `dist/` 上传部署）
   - 自启：`enabled`
   - **重要变更**：服务文件使用 `EnvironmentFile=/opt/planning-app/.env`；已配置 DeepSeek 真实模型 key、日费用上限 `AI_DAILY_COST_LIMIT_USD=1.0`，以及 `AI_CHEAP_MODEL=deepseek-v4-flash`、`AI_STRONG_MODEL=deepseek-reasoner`。
-  - **Week 27 新增环境变量（可选）**：
-    - `GOOGLE_APPLICATION_CREDENTIALS_JSON`：FCM 服务账号 JSON 私钥压缩为一行，未配置时 FCM 降级为日志。
+  - **Week 29 FCM 配置变更**：
+    - 将 Firebase Admin SDK 服务账号 JSON 文件上传到 `/opt/planning-app/firebase-service-account.json`（权限 600）。
+    - `/opt/planning-app/.env` 中 `GOOGLE_APPLICATION_CREDENTIALS_JSON=/opt/planning-app/firebase-service-account.json`（使用文件路径，避免 systemd 环境文件转义问题）。
+    - 日志确认：`FcmService` 输出 `FCM 初始化完成`，`NotificationsModule dependencies initialized`。
+    - 当前尚无用户上传 FCM token，待真机登录后验证端到端推送。
 - **Nginx 服务**：`nginx.service`
   - 状态：`active (running)`
   - 自启：`enabled`
@@ -369,9 +372,9 @@
   - `/opt/planning-app/services/api/.env` 已删除，统一使用 `/opt/planning-app/.env`；执行 Prisma CLI 前需 `source /opt/planning-app/.env`。
   - DeepSeek 单次调用耗时约 40-150 秒，移动端 loading 提示已到位。
   - **Week 15 遗留**：社交排行榜显示邮箱而非昵称/头像；共享目标未完整实现编辑权限；挑战与目标/习惯未强关联，按全局行为计分；无实时推送。
-  - **Week 16 遗留**：未实现 Google/Outlook OAuth，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步暂无定时轮询。
+  - **Week 16 遗留**：未实现 Google/Outlook OAuth 完整功能，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步后端 cron 已存在，UI 同步状态提示待增强（Week 32）。
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
-  - iOS 推送证书与真机调试需要 Apple Developer 账号，当前仅做代码与模拟器验证。
+  - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，`users.fcmToken` 字段已就绪，待真机登录上传 token 后验证真实推送。
   - **Week 24 遗留**：SSE 客户端暂无自动重连与心跳；逐 token 流式输出待后续需要时再实现；模板推荐仍基于关键词硬匹配，可后续引入 embedding 语义匹配。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。

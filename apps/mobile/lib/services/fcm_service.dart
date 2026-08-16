@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:logger/logger.dart';
 import 'api_client.dart';
+import 'notification_service.dart';
 
 /// 封装 Firebase Cloud Messaging (FCM) 的初始化、Token 获取与上传。
 ///
@@ -103,7 +105,14 @@ class FcmService {
     if (messaging == null) return;
     FirebaseMessaging.onMessage.listen((message) {
       _logger.d('收到前台 FCM 消息: ${message.notification?.title}');
-      // 个人版：先仅记录日志，后续可接入本地通知展示远程推送内容。
+      final notification = message.notification;
+      if (notification == null) return;
+      final payload = message.data['reminderId'] ?? message.data['targetId'];
+      NotificationService().showInstant(
+        notification.title ?? '计划提醒',
+        notification.body ?? '你有新的提醒',
+        payload: payload,
+      );
     });
   }
 
@@ -136,9 +145,18 @@ class FcmService {
 }
 
 /// 后台/终止态消息处理入口（必须顶层函数）。
-/// 当前个人版仅记录日志，后续可扩展为本地通知触发。
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   final logger = Logger();
+  final notification = message.notification;
+  if (notification != null) {
+    final payload = message.data['reminderId'] ?? message.data['targetId'];
+    await NotificationService().showInstant(
+      notification.title ?? '计划提醒',
+      notification.body ?? '你有新的提醒',
+      payload: payload,
+    );
+  }
   logger.d('收到后台 FCM 消息: ${message.notification?.title}');
 }

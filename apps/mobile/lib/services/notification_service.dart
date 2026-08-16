@@ -52,6 +52,24 @@ class NotificationService {
       },
     );
 
+    // Android 8+ 需要显式创建通知渠道，否则 FCM/本地通知可能静默不显示。
+    if (Platform.isAndroid) {
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        const channel = AndroidNotificationChannel(
+          'reminder_channel',
+          '计划提醒',
+          description: '目标、任务与习惯提醒',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        );
+        await androidPlugin.createNotificationChannel(channel);
+        _logger.d('Android 通知渠道 reminder_channel 已创建');
+      }
+    }
+
     _initialized = true;
     _logger.d('本地通知服务已初始化');
   }

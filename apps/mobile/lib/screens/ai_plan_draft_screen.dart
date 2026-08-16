@@ -23,6 +23,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   int _planDuration = 30;
   int _stageLength = 7;
   bool _advancing = false;
+  bool _deleting = false;
   bool _isStreaming = false;
   String? _progressMessage;
   List<dynamic> _templates = [];
@@ -139,6 +140,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   @override
   void dispose() {
     _inputController.dispose();
+    _followUpController.dispose();
     super.dispose();
   }
 
@@ -191,6 +193,21 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
       }
     } finally {
       if (mounted) setState(() => _approving = false);
+    }
+  }
+
+  Future<void> _delete(String draftId) async {
+    setState(() => _deleting = true);
+    try {
+      final deleted = await ref.read(aiDraftProvider.notifier).deleteApprovedDraft(draftId);
+      if (deleted != null && mounted) {
+        ref.read(apiClientProvider).trackEvent('ai.draft.deleted', targetId: draftId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('计划已删除并清空数据')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -319,27 +336,173 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
               ),
             ],
             const SizedBox(height: 24),
-            Expanded(
-              child: draftAsync.when(
-                data: (draft) {
-                  if (draft == null) {
-                    return const Center(child: Text('输入目标后点击生成'));
-                  }
-                  final plan = draft['plan'] as Map<String, dynamic>?;
-                  if (plan == null) {
-                    return const Center(child: Text('暂无草案内容'));
-                  }
-                  return _buildPlanContent(draft);
-                },
-                loading: () => _isStreaming
-                    ? const SizedBox.shrink()
-                    : const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('生成失败: $e'),
-              ),
-            ),
+            _buildDraftPreviewArea(draftAsync),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDraftPreviewArea(AsyncValue<Map<String, dynamic>?> draftAsync) {
+    return draftAsync.when(
+      data: (draft) {
+        if (draft == null) {
+          return const Center(child: Text('输入目标后点击生成'));
+        }
+        final plan = draft['plan'] as Map<String, dynamic>?;
+        if (plan == null) {
+          return const Center(child: Text('暂无草案内容'));
+        }
+        final goalTitle = plan['goal']?['title'] as String?;
+        final draftId = draft['draftId'] as String?;
+        final currentStage = plan['currentStage'] as int? ?? 1;
+        final totalStages = plan['totalStages'] as int? ?? 1;
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  goalTitle ?? '已生成计划草案',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '阶段 $currentStage / $totalStages · 点击预览详情并确认落库',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showPlanDialog(draft),
+                        icon: const Icon(Icons.preview, size: 18),
+                        label: const Text('查看计划详情'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (draftId != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '草案 ID: $draftId',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => _isStreaming
+          ? const SizedBox.shrink()
+          : const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('生成失败: $e'),
+    );
+  }
+
+  void _showPlanDialog(Map<String, dynamic> draft) {
+    final plan = draft['plan'] as Map<String, dynamic>?;
+    if (plan == null) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => _buildPlanDialog(dialogContext, draft),
+    );
+  }
+
+  Widget _buildPlanDialog(BuildContext dialogContext, Map<String, dynamic> draft) {
+    final plan = draft['plan'] as Map<String, dynamic>;
+    final draftId = draft['draftId'] as String?;
+    final currentStage = plan['currentStage'] as int? ?? 1;
+    final totalStages = plan['totalStages'] as int? ?? 1;
+
+    return StatefulBuilder(
+      builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('计划详情'),
+          contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: MediaQuery.of(context).size.height * 0.65,
+            child: _buildPlanContent(draft, onRefresh: () => setDialogState(() {})),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('关闭'),
+            ),
+            if (currentStage < totalStages)
+              TextButton(
+                onPressed: (_advancing || draftId == null)
+                    ? null
+                    : () async {
+                        Navigator.of(dialogContext).pop();
+                        await _advance(draftId);
+                      },
+                child: _advancing
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('进入下一阶段'),
+              ),
+            TextButton(
+              onPressed: (_deleting || draftId == null)
+                  ? null
+                  : () async {
+                      final nav = Navigator.of(dialogContext);
+                      final confirmed = await showDialog<bool>(
+                        context: dialogContext,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('删除计划'),
+                          content: const Text('确认删除该计划及其已落库数据？此操作不可撤销。'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('删除', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        nav.pop();
+                        await _delete(draftId);
+                      }
+                    },
+              child: _deleting
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('删除计划', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: (_approving || draftId == null)
+                  ? null
+                  : () async {
+                      Navigator.of(dialogContext).pop();
+                      await _approve(draftId);
+                    },
+              child: _approving
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('确认落库'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -446,9 +609,8 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     );
   }
 
-  Widget _buildPlanContent(Map<String, dynamic> draft) {
+  Widget _buildPlanContent(Map<String, dynamic> draft, {VoidCallback? onRefresh}) {
     final plan = draft['plan'] as Map<String, dynamic>;
-    final draftId = draft['draftId'] as String?;
     final fallback = draft['fallback'] == true;
     final error = draft['error'] as String?;
     final overload = draft['overload'] == true;
@@ -677,40 +839,14 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
           return ChoiceChip(
             label: Text(label),
             selected: selected,
-            onSelected: (_) => setState(() => _selectedFeedback = selected ? null : label),
+            onSelected: (_) {
+              setState(() => _selectedFeedback = selected ? null : label);
+              onRefresh?.call();
+            },
           );
         }).toList(),
       ),
       const SizedBox(height: 16),
-      SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          onPressed: (_approving || draftId == null) ? null : () => _approve(draftId),
-          child: _approving
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('确认并落库'),
-        ),
-      ),
-      if (currentStage < totalStages) ...[
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: (_advancing || draftId == null) ? null : () => _advance(draftId),
-            child: _advancing
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('进入下一阶段'),
-          ),
-        ),
-      ],
     ];
 
     return ListView(children: children);

@@ -38,6 +38,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Map<String, String> _energyCurve = {};
   bool _weekendOff = false;
   bool _isSaving = false;
+  bool _loadedFromPrefs = false;
 
   @override
   void dispose() {
@@ -116,7 +117,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: const Text('设置')),
       body: settingsAsync.when(
         data: (prefs) {
-          _loadFromPreferences(prefs);
+          if (!_loadedFromPrefs) {
+            _loadFromPreferences(prefs);
+            _loadedFromPrefs = true;
+          }
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [

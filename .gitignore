@@ -45,3 +45,6 @@ apps/mobile/android/app/google-services.json
 # Release artifacts
 releases/
 
+# Local Flutter SDK checkout (if any)
+tools/flutter/
+

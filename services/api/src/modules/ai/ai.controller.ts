@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Sse, Query } from "@nestjs/common";
+import { Controller, Delete, Get, Post, Body, Param, Sse, Query } from "@nestjs/common";
 import { AiService } from "./ai.service";
 import { AiInsightsService } from "./ai-insights.service";
 import { CreatePlanDraftDto } from "./dto/create-plan-draft.dto";
@@ -66,6 +66,14 @@ export class AiController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.aiService.advanceDraft(user.userId, id);
+  }
+
+  @Delete("plan-drafts/:id/approved")
+  deleteApprovedDraft(
+    @Param("id") id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.aiService.deleteApprovedDraft(user.userId, id);
   }
 
   @Post("replan")

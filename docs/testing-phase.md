@@ -508,3 +508,44 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
 - 原始日志：`planning_app_mobile_week28_full.log`
 - 修复后构建产物：`planning-app/releases/planning-app-week28.apk`（第 2 版）
 - 代码变更：`apps/mobile/lib/services/fcm_service.dart`、`apps/mobile/android/app/build.gradle.kts`、`apps/mobile/android/app/proguard-rules.pro`
+
+---
+
+## 21. Week 28 后续修复验证记录（2026-08-16）
+
+### 修复内容
+
+本次修复基于用户真机测试反馈的三个 UI/UX 问题：
+
+1. **AI 计划详情弹窗展示**
+   - 不再把长计划详情直接渲染在 AI 生成页下方。
+   - 生成后显示预览卡片，点击「查看计划详情」弹出可滚动 Dialog。
+
+2. **计划落库后支持删除**
+   - 在计划详情弹窗中增加「删除计划」按钮。
+   - 删除后后端清理该 goal 的所有关联数据（milestones、projects、tasks、habits、checkins、reminders、calendarEvents、planVersions）。
+
+3. **精力曲线设置修复**
+   - 设置页新增 `_loadedFromPrefs` 标志位，防止 provider 刷新覆盖用户选择。
+
+### 待验证指标
+
+| 检查项 | 期望结果 | 验证方式 |
+|--------|----------|----------|
+| AI 生成计划后点击「查看计划详情」 | 弹窗正常展示，可滚动，不挤压主页面 | 真机操作 |
+| 弹窗内选择反馈标签 | 标签高亮切换正常 | 真机操作 |
+| 弹窗内点击「确认落库」 | 关闭弹窗，落库成功，提示出现 | 真机操作 + 后端日志 |
+| 落库后点击「删除计划」 | 二次确认后删除，提示「计划已删除并清空数据」 | 真机操作 + 后端日志 + 数据库检查 |
+| 删除后切换到今日/目标页 | 已删除的目标、任务、习惯不再显示 | 真机操作 |
+| 设置页精力曲线 | 点击小时切换高/中/低，保存后重新进入仍保持 | 真机操作 |
+| 长测 5~10 分钟 | 无崩溃、无白屏、无异常日志 | logcat |
+
+### 已知风险
+
+- 删除计划在低性能服务器上涉及多表事务，若 habit 或 task 数据量极大可能超时。建议后续观察。
+- 精力曲线修复仅在设置页本身有效；若后端 `UserPreferences` 被其他端覆盖，仍可能恢复旧值。
+
+### 关联文件
+
+- 代码：`apps/mobile/lib/screens/ai_plan_draft_screen.dart`、`apps/mobile/lib/providers/ai_provider.dart`、`apps/mobile/lib/screens/settings_screen.dart`、`services/api/src/modules/ai/ai.controller.ts`、`services/api/src/modules/ai/ai.service.ts`
+- 文档：`planning-app/docs/development-log.md` 对应章节

@@ -13,6 +13,7 @@ import { ApprovePlanDto } from "./dto/approve-plan.dto";
 import { ReplanDto } from "./dto/replan.dto";
 import { ReviewDto } from "./dto/review.dto";
 import { AnalyticsService } from "../analytics/analytics.service";
+import { SyncEventsService } from "../sync/sync-events.service";
 import { AiSessionService } from "./ai-session.service";
 import {
   AITemplate,
@@ -38,6 +39,7 @@ export class AiService {
     private readonly orchestrator: PlanOrchestrator,
     private readonly executor: PlanExecutor,
     private readonly analytics: AnalyticsService,
+    private readonly syncEvents: SyncEventsService,
     private readonly aiSession: AiSessionService,
   ) {}
 
@@ -732,6 +734,141 @@ export class AiService {
       goalId: result.goalId,
       projectId: result.projectId,
       message: "计划已确认并落库",
+    };
+  }
+
+  async deleteApprovedDraft(userId: string, id: string) {
+    this.logger.debug(`删除已落库计划草案: ${id}, user=${userId}`);
+
+    const planVersion = await this.prisma.planVersion.findFirst({
+      where: { id },
+      include: { goal: true },
+    });
+
+    if (!planVersion || !planVersion.goal || planVersion.goal.userId !== userId) {
+      throw new NotFoundException("计划草案不存在或无权访问");
+    }
+
+    const goal = planVersion.goal;
+    const goalId = goal.id;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 删除该 planVersion 及其同 goal 的所有版本
+      await tx.planVersion.deleteMany({ where: { goalId } });
+
+      // 读取该 goal 下的里程碑与项目
+      const milestones = await tx.milestone.findMany({
+        where: { goalId },
+        select: { id: true },
+      });
+      const milestoneIds = milestones.map((m) => m.id);
+
+      const projects = await tx.project.findMany({
+        where: { goalId },
+        select: { id: true },
+      });
+      const projectIds = projects.map((p) => p.id);
+
+      // 读取项目下的任务
+      const tasks = await tx.task.findMany({
+        where: {
+          OR: [
+            { projectId: { in: projectIds } },
+            { milestoneId: { in: milestoneIds } },
+          ],
+        },
+        select: { id: true },
+      });
+      const taskIds = tasks.map((t) => t.id);
+
+      // 读取与该 goal 关联的习惯
+      const habitLinks = await tx.goalHabitLink.findMany({
+        where: { goalId },
+        select: { habitId: true },
+      });
+      const habitIds = habitLinks.map((h) => h.habitId);
+
+      // 删除关联的日历事件、打卡、提醒
+      await tx.calendarEvent.deleteMany({
+        where: { taskId: { in: taskIds } },
+      });
+      await tx.checkin.deleteMany({
+        where: {
+          OR: [
+            { taskId: { in: taskIds } },
+            { habitId: { in: habitIds } },
+          ],
+        },
+      });
+      await tx.reminder.deleteMany({
+        where: {
+          OR: [
+            { targetType: "goal", targetId: goalId },
+            { targetType: "task", targetId: { in: taskIds } },
+            { targetType: "habit", targetId: { in: habitIds } },
+          ],
+        },
+      });
+
+      // 删除任务、项目、里程碑、习惯、目标
+      await tx.task.deleteMany({
+        where: {
+          OR: [
+            { projectId: { in: projectIds } },
+            { milestoneId: { in: milestoneIds } },
+          ],
+        },
+      });
+      await tx.project.deleteMany({ where: { goalId } });
+      await tx.milestone.deleteMany({ where: { goalId } });
+      await tx.habit.deleteMany({ where: { id: { in: habitIds } } });
+      await tx.goal.delete({ where: { id: goalId } });
+
+      return { taskIds, habitIds, projectIds, milestoneIds, goalId };
+    });
+
+    // 广播同步删除事件，便于多端刷新
+    await this.syncEvents.createEvent(userId, {
+      eventType: "goal.deleted",
+      targetType: "goal",
+      targetId: result.goalId,
+      payload: { source: "ai.draft.delete" },
+    });
+    for (const taskId of result.taskIds) {
+      await this.syncEvents.createEvent(userId, {
+        eventType: "task.deleted",
+        targetType: "task",
+        targetId: taskId,
+        payload: { source: "ai.draft.delete" },
+      });
+    }
+    for (const habitId of result.habitIds) {
+      await this.syncEvents.createEvent(userId, {
+        eventType: "habit.deleted",
+        targetType: "habit",
+        targetId: habitId,
+        payload: { source: "ai.draft.delete" },
+      });
+    }
+
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.deleted",
+      targetId: id,
+      metadata: {
+        goalId: result.goalId,
+        taskCount: result.taskIds.length,
+        habitCount: result.habitIds.length,
+      },
+    });
+
+    return {
+      draftId: id,
+      deleted: true,
+      goalId: result.goalId,
+      taskCount: result.taskIds.length,
+      habitCount: result.habitIds.length,
+      message: "计划及其数据已删除",
     };
   }
 

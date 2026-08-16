@@ -171,6 +171,17 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     }
   }
 
+  Future<Map<String, dynamic>?> deleteApprovedDraft(String draftId) async {
+    try {
+      final res = await _client.delete('/ai/plan-drafts/$draftId/approved');
+      clear();
+      return res as Map<String, dynamic>;
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return null;
+    }
+  }
+
   void clear() {
     state = const AsyncValue.data(null);
   }

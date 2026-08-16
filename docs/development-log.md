@@ -2509,3 +2509,68 @@ Week 9 候选方向：
 - 若本次构建后 `Invalid resource ID 0x00000001` 仍存在，将进一步排查 `pubspec.yaml` assets 与第三方库默认资源。
 - 需要真机重新抓取 5~10 分钟日志，验证修复效果。
 - 构建产物：`planning-app/releases/planning-app-week28.apk`。
+
+---
+
+## Week 28 后续：AI 计划详情弹窗、删除与精力曲线修复（2026-08-16）
+
+### 目标
+
+修复用户真机测试后提出的三个 UI/UX 问题：
+1. AI 生成的计划详情应使用弹窗展示，避免挤压在主页面下方。
+2. 计划确认落库后应支持删除，并清空后端生成的 goal/project/task/habit 等关联数据。
+3. 设置页精力曲线无法保存，点击后会被 provider 刷新覆盖。
+
+### 已完成工作
+
+1. **精力曲线设置修复**
+   - 文件：`apps/mobile/lib/screens/settings_screen.dart`
+   - 问题：`settingsAsync.when(data: ...)` 每次 provider 刷新都会调用 `_loadFromPreferences()`，把用户刚刚点击修改的本地 `_energyCurve` 覆盖回默认值。
+   - 修复：新增 `bool _loadedFromPrefs = false` 标志位，仅在首次加载时从 `UserPreferences` 初始化本地状态，后续重建不再覆盖。
+
+2. **AI 计划详情改为 Dialog 弹窗**
+   - 文件：`apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+   - 问题：原 `_buildPlanContent` 返回的 `ListView` 直接放在 `Expanded` 中，位于输入区下方，无滚动条、显示拥挤。
+   - 修复：
+     - 主页面仅保留「查看计划详情」预览卡片。
+     - 新增 `_showPlanDialog` / `_buildPlanDialog`，使用 `AlertDialog` + `StatefulBuilder` + 固定高度 `SizedBox` 展示可滚动内容。
+     - 反馈选择（太难 / 时间不合适 / 帮我再简单点）保留在弹窗内容区，并通过 `onRefresh` 回调刷新弹窗 UI。
+
+3. **计划落库后支持删除**
+   - 文件：
+     - 前端：`apps/mobile/lib/screens/ai_plan_draft_screen.dart`、`apps/mobile/lib/providers/ai_provider.dart`
+     - 后端：`services/api/src/modules/ai/ai.controller.ts`、`services/api/src/modules/ai/ai.service.ts`
+   - 问题：`_approve` 只创建数据，无删除入口。
+   - 修复：
+     - 后端新增 `DELETE /ai/plan-drafts/:id/approved`。
+     - `AiService.deleteApprovedDraft` 在事务中：
+       - 删除该 goal 关联的所有 `PlanVersion`。
+       - 读取 goal 下的 milestones / projects / tasks / habits，删除对应的 `CalendarEvent`、`Checkin`、`Reminder`。
+       - 删除 `Task`、`Project`、`Milestone`、`Habit`、`Goal`。
+       - 广播 `goal.deleted` / `task.deleted` / `habit.deleted` 同步事件。
+     - 前端 `AiDraftNotifier` 新增 `deleteApprovedDraft(draftId)`，成功后 `clear()` 状态。
+     - 弹窗底部增加「删除计划」红色按钮，带二次确认 Dialog。
+
+### 本地验证与部署
+
+- `C:/Users/Administrator/flutter/bin/flutter analyze`（`apps/mobile`）：No issues found。
+- `npm run build`（`services/api`）：nest build 成功，无错误。
+- Flutter 产物：`planning-app/releases/planning-app-week28-v3.apk`（61.6 MB）。
+- 后端产物：`/tmp/api-dist-week28-fix.tar.gz`（204 KB），已上传至服务器 `/opt/planning-app/services/api/dist/` 并重启 `planning-api.service`。
+- 部署验证：
+  - `GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok"}` ✅
+  - `DELETE https://xutaostudy.xyz/api/v1/ai/plan-drafts/:id/approved` → `401 Unauthorized`（路由已注册，需 JWT）✅
+
+### 关键文件
+
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+- `apps/mobile/lib/providers/ai_provider.dart`
+- `apps/mobile/lib/screens/settings_screen.dart`
+- `services/api/src/modules/ai/ai.controller.ts`
+- `services/api/src/modules/ai/ai.service.ts`
+
+### 遗留与后续
+
+- 需真机安装 `planning-app/releases/planning-app-week28-v3.apk` 验证上述三点。
+- 应用启动白屏问题已在 Week 28 v2 APK 修复；本次 v3 构建未回退相关代码。
+- 建议继续运行 5~10 分钟长测，验证删除落库计划后多端同步事件正常。

@@ -15,7 +15,7 @@ class FcmService {
   factory FcmService() => _instance;
   FcmService._internal();
 
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(filter: ProductionFilter());
   final ApiClient _apiClient = ApiClient();
   FirebaseMessaging? _messaging;
   bool _initialized = false;
@@ -27,19 +27,23 @@ class FcmService {
   /// 在 [main.dart] WidgetsFlutterBinding.ensureInitialized() 之后调用。
   /// Windows/Linux 桌面端不支持 Firebase Messaging，直接跳过。
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      _logger.i('FCM 已初始化，跳过');
+      return;
+    }
 
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       _logger.i('桌面平台暂不初始化 FCM');
       return;
     }
 
+    _logger.i('FCM 初始化开始');
     try {
       await Firebase.initializeApp();
       _messaging = FirebaseMessaging.instance;
-      _logger.d('Firebase 初始化成功');
-    } catch (e) {
-      _logger.w('Firebase 初始化失败，远程推送将不可用：$e');
+      _logger.i('Firebase 初始化成功');
+    } catch (e, st) {
+      _logger.e('Firebase 初始化失败，远程推送将不可用：$e', error: e, stackTrace: st);
       return;
     }
 
@@ -48,7 +52,7 @@ class FcmService {
     _listenForegroundMessages();
 
     _initialized = true;
-    _logger.d('FCM 服务已初始化');
+    _logger.i('FCM 服务已初始化，准备后台上传 token');
 
     // 获取并上传 FCM Token 可能依赖网络与 Firebase Installations，
     // 放在后台执行，避免阻塞应用启动导致白屏。
@@ -58,18 +62,21 @@ class FcmService {
   /// 手动获取并上传当前 FCM Token。登录成功后应调用一次，确保后端保存最新 token。
   Future<void> uploadToken() async {
     final messaging = _messaging;
-    if (messaging == null) return;
+    if (messaging == null) {
+      _logger.w('uploadToken: messaging 为空');
+      return;
+    }
     try {
       final token = await messaging.getToken();
+      _logger.i('获取到 FCM Token: ${token != null && token.length > 20 ? "${token.substring(0, 20)}..." : token}');
       if (token == null || token.isEmpty) {
         _logger.w('未获取到 FCM Token');
         return;
       }
-      _logger.d('获取到 FCM Token，准备上传');
-      await _apiClient.post('/users/me/fcm-token', body: {'token': token});
-      _logger.d('FCM Token 已上传');
-    } catch (e) {
-      _logger.w('上传 FCM Token 失败: $e');
+      final resp = await _apiClient.post('/users/me/fcm-token', body: {'token': token});
+      _logger.i('FCM Token 上传成功: ${resp?.toString()}');
+    } catch (e, st) {
+      _logger.e('上传 FCM Token 失败: $e', error: e, stackTrace: st);
     }
   }
 
@@ -82,7 +89,9 @@ class FcmService {
         badge: true,
         sound: true,
       );
-      _logger.d('iOS 通知权限状态: ${settings.authorizationStatus}');
+      _logger.i('iOS 通知权限状态: ${settings.authorizationStatus}');
+    } else {
+      _logger.i('Android 不需要在初始化时请求通知权限（目标 SDK 33+ 在运行时请求）');
     }
   }
 
@@ -90,12 +99,12 @@ class FcmService {
     final messaging = _messaging;
     if (messaging == null) return;
     messaging.onTokenRefresh.listen((token) async {
-      _logger.d('FCM Token 已刷新');
+      _logger.i('FCM Token 已刷新: ${token.length > 20 ? "${token.substring(0, 20)}..." : token}');
       try {
         await _apiClient.post('/users/me/fcm-token', body: {'token': token});
-        _logger.d('刷新后的 FCM Token 已上传');
-      } catch (e) {
-        _logger.w('上传刷新后的 FCM Token 失败: $e');
+        _logger.i('刷新后的 FCM Token 已上传');
+      } catch (e, st) {
+        _logger.e('上传刷新后的 FCM Token 失败: $e', error: e, stackTrace: st);
       }
     });
   }
@@ -103,16 +112,25 @@ class FcmService {
   void _listenForegroundMessages() {
     final messaging = _messaging;
     if (messaging == null) return;
-    FirebaseMessaging.onMessage.listen((message) {
-      _logger.d('收到前台 FCM 消息: ${message.notification?.title}');
+    _logger.i('注册前台 FCM 消息监听');
+    FirebaseMessaging.onMessage.listen((message) async {
+      _logger.i('收到前台 FCM 消息: messageId=${message.messageId}, title=${message.notification?.title}, body=${message.notification?.body}, data=${message.data}');
       final notification = message.notification;
-      if (notification == null) return;
+      if (notification == null) {
+        _logger.w('前台 FCM 消息无 notification 字段，不弹通知');
+        return;
+      }
       final payload = message.data['reminderId'] ?? message.data['targetId'];
-      NotificationService().showInstant(
-        notification.title ?? '计划提醒',
-        notification.body ?? '你有新的提醒',
-        payload: payload,
-      );
+      try {
+        await NotificationService().showInstant(
+          notification.title ?? '计划提醒',
+          notification.body ?? '你有新的提醒',
+          payload: payload,
+        );
+        _logger.i('前台通知已弹出: title=${notification.title}, body=${notification.body}');
+      } catch (e, st) {
+        _logger.e('前台通知弹出失败: $e', error: e, stackTrace: st);
+      }
     });
   }
 
@@ -123,8 +141,8 @@ class FcmService {
     if (messaging == null) return null;
     try {
       return await messaging.getToken();
-    } catch (e) {
-      _logger.w('获取 FCM Token 失败: $e');
+    } catch (e, st) {
+      _logger.e('获取 FCM Token 失败: $e', error: e, stackTrace: st);
       return null;
     }
   }
@@ -137,9 +155,9 @@ class FcmService {
     try {
       await messaging.deleteToken();
       await _apiClient.delete('/users/me/fcm-token');
-      _logger.d('FCM Token 已删除');
-    } catch (e) {
-      _logger.w('删除 FCM Token 失败: $e');
+      _logger.i('FCM Token 已删除');
+    } catch (e, st) {
+      _logger.e('删除 FCM Token 失败: $e', error: e, stackTrace: st);
     }
   }
 }
@@ -148,15 +166,30 @@ class FcmService {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
-  final logger = Logger();
-  final notification = message.notification;
-  if (notification != null) {
+  final logger = Logger(filter: ProductionFilter());
+  logger.i('后台 FCM 消息入口被调用: messageId=${message.messageId}, title=${message.notification?.title}, body=${message.notification?.body}, data=${message.data}');
+  try {
+    await NotificationService().initialize();
+    logger.i('后台 NotificationService 已初始化');
+    final notification = message.notification;
+    if (notification == null) {
+      logger.w('后台 FCM 消息无 notification 字段，仅展示本地通知兜底');
+      await NotificationService().showInstant(
+        '计划提醒',
+        '你有新的提醒',
+        payload: message.data['reminderId'] ?? message.data['targetId'],
+      );
+      logger.i('后台兜底通知已弹出');
+      return;
+    }
     final payload = message.data['reminderId'] ?? message.data['targetId'];
     await NotificationService().showInstant(
       notification.title ?? '计划提醒',
       notification.body ?? '你有新的提醒',
       payload: payload,
     );
+    logger.i('后台通知已弹出: title=${notification.title}, body=${notification.body}');
+  } catch (e, st) {
+    logger.e('后台 FCM 处理失败: $e', error: e, stackTrace: st);
   }
-  logger.d('收到后台 FCM 消息: ${message.notification?.title}');
 }

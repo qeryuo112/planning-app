@@ -16,14 +16,17 @@ class NotificationService {
   NotificationService._internal();
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(filter: ProductionFilter());
   bool _initialized = false;
 
   /// 外部可设置通知点击后的跳转回调，payload 为 reminder.id。
   static void Function(String? payload)? onNotificationTap;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      _logger.i('NotificationService 已初始化，跳过');
+      return;
+    }
 
     if (Platform.isWindows || Platform.isLinux) {
       _logger.i('桌面平台暂不初始化本地通知插件');
@@ -31,6 +34,7 @@ class NotificationService {
       return;
     }
 
+    _logger.i('NotificationService 初始化开始');
     tz_data.initializeTimeZones();
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -47,10 +51,11 @@ class NotificationService {
     await _plugin.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (details) {
-        _logger.d('通知点击: ${details.payload}');
+        _logger.i('通知点击: payload=${details.payload}');
         onNotificationTap?.call(details.payload);
       },
     );
+    _logger.i('FlutterLocalNotificationsPlugin 初始化完成');
 
     // Android 8+ 需要显式创建通知渠道，否则 FCM/本地通知可能静默不显示。
     if (Platform.isAndroid) {
@@ -66,12 +71,14 @@ class NotificationService {
           enableVibration: true,
         );
         await androidPlugin.createNotificationChannel(channel);
-        _logger.d('Android 通知渠道 reminder_channel 已创建');
+        _logger.i('Android 通知渠道 reminder_channel 已创建');
+      } else {
+        _logger.w('Android 通知插件未找到，无法创建渠道');
       }
     }
 
     _initialized = true;
-    _logger.d('本地通知服务已初始化');
+    _logger.i('NotificationService 初始化完成');
   }
 
   /// 获取因点击通知而冷启动应用时的 payload。
@@ -80,19 +87,27 @@ class NotificationService {
     if (Platform.isWindows || Platform.isLinux) return null;
     if (!_initialized) await initialize();
     final launchDetails = await _plugin.getNotificationAppLaunchDetails();
-    return launchDetails?.notificationResponse?.payload;
+    final payload = launchDetails?.notificationResponse?.payload;
+    _logger.i('冷启动通知 payload: $payload');
+    return payload;
   }
 
   Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      if (android == null) return false;
-      return await android.requestNotificationsPermission() ?? false;
+      if (android == null) {
+        _logger.w('Android 通知插件未找到，无法请求权限');
+        return false;
+      }
+      final granted = await android.requestNotificationsPermission() ?? false;
+      _logger.i('Android 通知权限请求结果: $granted');
+      return granted;
     }
     if (Platform.isIOS) {
       final result = await _plugin
           .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
           ?.requestPermissions(alert: true, badge: true, sound: true);
+      _logger.i('iOS 通知权限请求结果: $result');
       return result ?? false;
     }
     return false;
@@ -156,6 +171,7 @@ class NotificationService {
       iOS: iosDetails,
     );
 
+    _logger.i('准备调度本地通知: id=$id, reminderId=${reminder.id}, body=$body, triggerAt=${reminder.triggerAt}');
     try {
       await _plugin.zonedSchedule(
         id,
@@ -167,6 +183,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         payload: reminder.id,
       );
+      _logger.i('已调度通知: ${reminder.id} at ${reminder.triggerAt}');
     } on PlatformException catch (e) {
       // Android 12+ 未授权精确闹钟时常见错误码
       final message = e.message ?? '';
@@ -176,28 +193,27 @@ class NotificationService {
       }
       rethrow;
     }
-
-    _logger.d('已调度通知: ${reminder.id} at ${reminder.triggerAt}');
   }
 
   Future<void> cancelReminder(String reminderId) async {
     if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
     await _plugin.cancel(_notificationId(reminderId));
-    _logger.d('已取消通知: $reminderId');
+    _logger.i('已取消通知: $reminderId');
   }
 
   Future<void> cancelAll() async {
     if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
     await _plugin.cancelAll();
-    _logger.d('已取消全部通知');
+    _logger.i('已取消全部通知');
   }
 
   Future<void> showInstant(String title, String body, {String? payload}) async {
     if (Platform.isWindows || Platform.isLinux) return;
     if (!_initialized) await initialize();
 
+    _logger.i('准备弹出即时通知: title=$title, body=$body, payload=$payload');
     const androidDetails = AndroidNotificationDetails(
       'reminder_channel',
       '计划提醒',
@@ -211,12 +227,18 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    await _plugin.show(
-      Random().nextInt(1 << 30),
-      title,
-      body,
-      details,
-      payload: payload,
-    );
+    try {
+      await _plugin.show(
+        Random().nextInt(1 << 30),
+        title,
+        body,
+        details,
+        payload: payload,
+      );
+      _logger.i('即时通知已弹出: title=$title, body=$body');
+    } catch (e, st) {
+      _logger.e('即时通知弹出失败: $e', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 }

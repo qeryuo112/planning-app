@@ -182,6 +182,7 @@ export class RemindersService {
       });
 
       if (reminder.channel === "push") {
+        this.logger.log(`准备远程推送提醒: reminder=${reminder.id}, user=${reminder.userId}`);
         const title = "计划提醒";
         const body = `你的 ${reminder.targetType} 到期了`;
         void this.fcm

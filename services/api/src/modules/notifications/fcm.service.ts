@@ -88,7 +88,7 @@ export class FcmService {
 
   async sendToUser(userId: string, payload: FcmPayload): Promise<boolean> {
     if (!this.app) {
-      this.logger.debug(`FCM 未初始化，跳过推送给 user=${userId}`);
+      this.logger.warn(`FCM 未初始化，跳过推送给 user=${userId}`);
       return false;
     }
 
@@ -99,20 +99,38 @@ export class FcmService {
 
     const token = user?.fcmToken;
     if (!token) {
-      this.logger.debug(`用户无 FCM token: user=${userId}`);
+      this.logger.warn(`用户无 FCM token: user=${userId}`);
       return false;
     }
 
+    this.logger.log(
+      `FCM 开始推送: user=${userId}, token=${token.substring(0, 20)}..., title=${payload.title}`,
+    );
+
     try {
-      await getMessaging(this.app).send({
+      const messageId = await getMessaging(this.app).send({
         token,
         notification: {
           title: payload.title,
           body: payload.body,
         },
         data: payload.data ?? {},
+        android: {
+          priority: "high",
+          notification: {
+            channelId: "reminder_channel",
+            priority: "high",
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+            },
+          },
+        },
       });
-      this.logger.debug(`FCM 推送成功: user=${userId}`);
+      this.logger.log(`FCM 推送成功: user=${userId}, messageId=${messageId}`);
       return true;
     } catch (err: any) {
       const code = err?.errorInfo?.code as string | undefined;

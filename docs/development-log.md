@@ -2728,3 +2728,78 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - 创建一条提醒并等待到期（或设置过去的 `triggerAt`），验证手机能收到 FCM 通知。
 - 若国内网络访问 Firebase 不稳定，可能需要进一步观察推送延迟与失败率。
 
+
+---
+
+## Week 30：UserEvent 行为埋点补全（2026-08-16）
+
+### 目标
+
+统一客户端行为埋点上传机制，覆盖关键用户路径；补全后端 `AnalyticsService` 单元测试，确保埋点数据完整落库。
+
+### 已完成工作
+
+1. **客户端新增 `AnalyticsService`（批量 + 失败重试）**
+   - 文件：`apps/mobile/lib/services/analytics_service.dart`
+   - 能力：
+     - 事件先进入内存队列，达到 10 条或 30 秒定时 flush。
+     - 上传失败时持久化到 `SharedPreferences`，最多重试 3 次，缓存上限 100 条。
+     - 监听 App 生命周期：进入后台前强制 flush，回到前台时重试缓存。
+     - 未初始化时丢弃事件，不阻塞业务路径。
+
+2. **在 `auth_provider` 中初始化并复用 `AnalyticsService`**
+   - 文件：`apps/mobile/lib/providers/auth_provider.dart`
+   - 新增 `analyticsServiceProvider`。
+   - 登录/注册成功后调用 `AnalyticsService.initialize(api)`，并记录 `user.logged_in` / `user.registered`。
+   - 登出时调用 `dispose()` 释放定时器与生命周期监听。
+
+3. **替换页面中直接调用 `ApiClient.trackEvent` 的代码**
+   - `apps/mobile/lib/screens/login_screen.dart`：移除登录/注册成功后的直接埋点，避免与 `auth_provider` 重复。
+   - `apps/mobile/lib/screens/today_screen.dart`：
+     - `today.view`（页面初始化）
+     - `task.completed`（完成任务）
+     - `habit.checkin`（习惯打卡）
+   - `apps/mobile/lib/screens/ai_plan_draft_screen.dart`：
+     - `ai.draft.generated` / `ai.draft.follow_up_generated`
+     - `ai.draft.approved`
+     - `ai.draft.deleted`
+
+4. **修复 `AnalyticsService` 导入问题**
+   - 原 `import 'dart:async' show unawaited;` 导致 `Timer` 未定义，改为 `import 'dart:async';`。
+   - `flutter analyze` 通过，无 issues。
+
+5. **后端补全 `AnalyticsService` 单元测试**
+   - 文件：`services/api/src/modules/analytics/analytics.service.spec.ts`（新增）
+   - 覆盖：
+     - `track`：单条事件写入、指标计数。
+     - `trackBatch`：批量写入、空数组返回 `[]`。
+     - `findEvents`：按用户 + 事件类型过滤查询。
+   - 运行结果：`4 passed`。
+
+### 验证
+
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- `npm run test -w services/api -- --testPathPattern=analytics/analytics.service.spec.ts`：`4 passed` ✅
+
+### 关键文件
+
+- `apps/mobile/lib/services/analytics_service.dart`
+- `apps/mobile/lib/providers/auth_provider.dart`
+- `apps/mobile/lib/screens/login_screen.dart`
+- `apps/mobile/lib/screens/today_screen.dart`
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+- `services/api/src/modules/analytics/analytics.service.spec.ts`
+- `services/api/src/modules/analytics/analytics.service.ts`
+- `services/api/src/modules/analytics/analytics.controller.ts`
+
+### 决策与范围
+
+- 不添加“查看自己埋点数据”页面，仅保证数据完整落库。
+- 埋点服务用 `SharedPreferences` 缓存失败事件，批量上传，不阻塞业务路径。
+
+### 遗留与后续
+
+- 可在更多页面补充事件（如 `goal.created`、`reminder.dismissed`、`calendar.subscribed` 等），当前已覆盖核心路径。
+- Week 31：增强 AI 多轮对话上下文。
+- Week 32：日历订阅自动刷新 UI。
+- FCM 真机端到端验证仍待用户登录测试账号后触发。

@@ -159,9 +159,9 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   }
 
   void _trackDraftGenerated(bool isFollowUp) {
-    final client = ref.read(apiClientProvider);
+    final analytics = ref.read(analyticsServiceProvider);
     final draft = ref.read(aiDraftProvider).value;
-    client.trackEvent(
+    analytics.trackEvent(
       isFollowUp ? 'ai.draft.follow_up_generated' : 'ai.draft.generated',
       targetId: draft?['draftId'] as String?,
       metadata: {
@@ -200,7 +200,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             feedback: _selectedFeedback,
           );
       if (approved != null && mounted) {
-        ref.read(apiClientProvider).trackEvent('ai.draft.approved', targetId: draftId);
+        ref.read(analyticsServiceProvider).trackEvent('ai.draft.approved', targetId: draftId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('计划已确认，请切换到「今日」页查看任务')),
         );
@@ -215,7 +215,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     try {
       final deleted = await ref.read(aiDraftProvider.notifier).deleteApprovedDraft(draftId);
       if (deleted != null && mounted) {
-        ref.read(apiClientProvider).trackEvent('ai.draft.deleted', targetId: draftId);
+        ref.read(analyticsServiceProvider).trackEvent('ai.draft.deleted', targetId: draftId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('计划已删除并清空数据')),
         );

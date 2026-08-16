@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../providers/auth_provider.dart';
 import '../providers/today_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/habit_provider.dart';
 import '../providers/reminder_provider.dart';
-import '../providers/auth_provider.dart';
 import '../models/reminder_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_ui.dart';
@@ -25,8 +25,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
       ref.read(todayProvider.notifier).fetchToday();
       ref.read(remindersProvider.notifier).fetchReminders();
       ref.read(remindersProvider.notifier).requestPermission();
-      final client = ref.read(apiClientProvider);
-      client.trackEvent('today.view');
+      ref.read(analyticsServiceProvider).trackEvent('today.view');
     });
   }
 
@@ -34,13 +33,13 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     final date = DateFormat('yyyy-MM-dd').format(DateTime.now());
     await ref.read(tasksProvider(date).notifier).completeTask(taskId);
     await ref.read(todayProvider.notifier).fetchToday();
-    ref.read(apiClientProvider).trackEvent('task.completed', targetId: taskId);
+    ref.read(analyticsServiceProvider).trackEvent('task.completed', targetId: taskId);
   }
 
   Future<void> _checkinHabit(String habitId) async {
     await ref.read(habitsProvider.notifier).checkin(habitId);
     await ref.read(todayProvider.notifier).fetchToday();
-    ref.read(apiClientProvider).trackEvent('habit.checkin', targetId: habitId);
+    ref.read(analyticsServiceProvider).trackEvent('habit.checkin', targetId: habitId);
   }
 
   String _tomorrowDateString() {

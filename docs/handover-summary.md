@@ -142,6 +142,8 @@
 - [x] **Week 27 新增**：FCM 真实推送后端（`fcm.service.ts`、`POST /users/me/fcm-token`）
 - [x] **Week 27 新增**：服务端监控指标 `/metrics`（Prometheus 格式）
 - [x] **Week 27 新增**：`UserEvent` 行为埋点落库与客户端 `POST /analytics/events` 批量接口
+- [x] **Week 30 新增**：客户端 `AnalyticsService` 批量/失败缓存/生命周期 flush，覆盖登录、今日页、AI 草案页核心事件
+- [x] **Week 30 新增**：`AnalyticsService` 后端单元测试 `analytics.service.spec.ts`
 - [x] **Week 27 新增**：`AISession`/`AIMessage` 多轮对话上下文，`createDraft`/`replan`/`review` 支持 `sessionId`/`followUp`
 - [x] **Week 27 新增**：Flutter `FcmService` 初始化、Token 上传/刷新/后台消息监听（未配置 Firebase 时优雅降级）
 - [x] **Week 27 新增**：Flutter AI 计划页「继续对话」入口与消息气泡列表
@@ -214,7 +216,7 @@
 ### 4.3 仍未完成 / 待后续 Week 开发
 
 1. **AISession 多轮对话未开发**：模型存在，无实际多轮上下文管理。
-2. **UserEvent 行为埋点未落库**：`analytics.service.ts` 仅接口骨架，未持久化。
+2. **UserEvent 行为埋点已落库**：`analytics.service.ts` 已实现单条/批量写入；客户端 `AnalyticsService` 已覆盖登录、今日页、AI 草案页核心事件，更多事件（如 `goal.created`、`reminder.dismissed`）可后续补充。
 3. **设置/偏好页仅完成时区与通知总开关**：可用时间、精力曲线、通知偏好的详细配置待后续迭代。
 4. **收件箱与日历未接入离线同步**：当前依赖在线 API，未写入本地 SQLite 与操作队列。
 5. **本地通知当前仅配置 Android**：iOS 平台目录未生成；通知点击跳转未完整实现；精确闹钟权限未做引导。

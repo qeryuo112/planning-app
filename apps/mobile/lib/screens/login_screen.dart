@@ -83,8 +83,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         SnackBar(content: Text(_isRegister ? '注册失败: $message' : '登录失败: $message')),
       );
     } else {
-      final client = ref.read(apiClientProvider);
-      await client.trackEvent(_isRegister ? 'user.registered' : 'user.logged_in');
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const MainScreen()),

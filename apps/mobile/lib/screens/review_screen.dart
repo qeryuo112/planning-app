@@ -14,11 +14,18 @@ class ReviewScreen extends ConsumerStatefulWidget {
 class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   String? _selectedGoalId;
   String _period = 'weekly';
+  final _followUpController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     Future.microtask(() => ref.read(goalsProvider.notifier).fetchGoals());
+  }
+
+  @override
+  void dispose() {
+    _followUpController.dispose();
+    super.dispose();
   }
 
   Future<void> _generateReview() async {
@@ -29,6 +36,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           period: _period,
           endDate: endDate,
         );
+  }
+
+  Future<void> _sendFollowUp() async {
+    final text = _followUpController.text.trim();
+    if (text.isEmpty) return;
+    _followUpController.clear();
+    await ref.read(reviewProvider.notifier).followUpReview(text);
   }
 
   @override
@@ -193,6 +207,40 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 ),
               )),
         ],
+        const SizedBox(height: 24),
+        _buildFollowUpInput(),
+      ],
+    );
+  }
+
+  Widget _buildFollowUpInput() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _followUpController,
+            decoration: const InputDecoration(
+              hintText: '补充问题或调整要求…',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _sendFollowUp(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Consumer(builder: (context, ref, _) {
+          final isLoading = ref.watch(reviewProvider).isLoading;
+          return IconButton(
+            onPressed: isLoading ? null : _sendFollowUp,
+            icon: isLoading
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send),
+          );
+        }),
       ],
     );
   }

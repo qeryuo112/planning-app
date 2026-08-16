@@ -153,6 +153,9 @@
 - [x] **Week 27-D 新增**：Inbox 本地优先 + 乐观更新 + 失败回退
 - [x] **Week 27-D 新增**：Calendar 本地优先 + 乐观更新 + 失败回退
 - [x] **Week 27-D 新增**：日历订阅自动刷新 UI（30 秒轮询 + 生命周期恢复刷新）
+- [x] **Week 32 新增**：日历主页面显示订阅同步状态卡片、自动刷新 SnackBar 通知
+- [x] **Week 32 新增**：订阅管理弹窗显示同步中/导入数量/失败错误
+- [x] **Week 32 新增**：ReviewScreen 多轮追问入口（调用 `POST /ai/review` 传 `sessionId` + `followUp`）
 - [x] **Week 27-D 新增**：SyncEngine 操作结果广播流与指数退避重试
 
 ### 3.2 已生成数据模型
@@ -379,7 +382,7 @@
   - **Week 15 遗留**：社交排行榜显示邮箱而非昵称/头像；共享目标未完整实现编辑权限；挑战与目标/习惯未强关联，按全局行为计分；无实时推送。
   - **Week 16 遗留**：未实现 Google/Outlook OAuth 完整功能，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步后端 cron 已存在，UI 同步状态提示待增强（Week 32）。
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
-  - **Week 31 遗留**：`ReviewScreen` 前端尚未提供追问入口；`AiPlanDraftScreen` 已支持多轮追问与会话历史展示。
+  - **Week 31 遗留**：`ReviewScreen` 前端尚未提供追问入口；`AiPlanDraftScreen` 已支持多轮追问与会话历史展示。**（Week 32 已解决：ReviewScreen 已增加追问输入框）**
   - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；但国内服务器无法访问 Google OAuth2 服务，远程 FCM 推送发送失败，个人使用版暂不启用远程推送，本地通知可用。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。

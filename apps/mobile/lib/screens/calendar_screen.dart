@@ -23,12 +23,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     super.initState();
     _selectedDay = _focusedDay;
     _loadEvents();
+    Future.microtask(() {
+      ref.read(calendarSubscriptionsProvider.notifier).refresh();
+      ref.read(calendarSubscriptionsProvider.notifier).startAutoRefresh();
+    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
+    ref.read(calendarSubscriptionsProvider.notifier).stopAutoRefresh();
     super.dispose();
   }
 
@@ -53,6 +58,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final calendarAsync = ref.watch(calendarProvider);
+    final subscriptionsState = ref.watch(calendarSubscriptionsProvider);
+
+    ref.listen(calendarSubscriptionsProvider, (prev, next) {
+      final notification = next.lastSyncNotification;
+      if (notification != null && notification != prev?.lastSyncNotification) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(notification)),
+        );
+        ref.read(calendarSubscriptionsProvider.notifier).clearNotification();
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -72,6 +88,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       body: calendarAsync.when(
         data: (_) => Column(
           children: [
+            _buildSubscriptionStatusCard(subscriptionsState),
             TableCalendar(
               firstDay: DateTime.utc(2020, 1, 1),
               lastDay: DateTime.utc(2030, 12, 31),
@@ -130,6 +147,108 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSubscriptionStatusCard(CalendarSubscriptionsState state) {
+    if (state.subscriptions.isEmpty) return const SizedBox.shrink();
+
+    if (state.hasAnySyncing) {
+      return Card(
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '正在同步外部日历…',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final latest = state.latestSuccessSync();
+    if (latest != null) {
+      final diff = DateTime.now().difference(latest.syncAt);
+      final timeText = diff.inMinutes < 1
+          ? '刚刚'
+          : diff.inHours < 1
+              ? '${diff.inMinutes} 分钟前'
+              : diff.inDays < 1
+                  ? '${diff.inHours} 小时前'
+                  : '${diff.inDays} 天前';
+      return Card(
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        child: InkWell(
+          onTap: _showSubscriptionsDialog,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_done, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '「${latest.subscription.name}」$timeText同步完成',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        '导入 ${latest.imported} 条事件，点击查看详情',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.grey),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 有订阅但从未成功同步过
+    final hasError = state.subscriptions.any((s) => s.lastSyncResult?['error'] != null);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: InkWell(
+        onTap: _showSubscriptionsDialog,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(
+                hasError ? Icons.cloud_off : Icons.cloud_queue,
+                color: hasError ? Theme.of(context).colorScheme.error : Colors.grey,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  hasError ? '外部日历同步失败，点击查看详情' : '外部日历尚未同步，点击查看详情',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -518,7 +637,8 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
 
   @override
   Widget build(BuildContext context) {
-    final subscriptionsAsync = ref.watch(calendarSubscriptionsProvider);
+    final state = ref.watch(calendarSubscriptionsProvider);
+    final subscriptions = state.subscriptions;
 
     return AlertDialog(
       title: const Text('外部日历订阅'),
@@ -542,55 +662,83 @@ class _CalendarSubscriptionsDialogState extends ConsumerState<_CalendarSubscript
               ],
             ),
             const SizedBox(height: 16),
-            subscriptionsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, st) => Center(child: Text('加载失败: $err')),
-              data: (subscriptions) {
-                if (subscriptions.isEmpty) {
-                  return const Text('暂无订阅');
-                }
-                return Flexible(
-                  child: RefreshIndicator(
-                    onRefresh: () => ref.read(calendarSubscriptionsProvider.notifier).refresh(),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: subscriptions.length,
-                      itemBuilder: (context, index) {
-                        final sub = subscriptions[index];
-                        final lastSync = _formatSyncTime(sub.lastSyncAt);
-                        final imported = sub.lastSyncResult?['imported'] as int?;
+            if (state.globalError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  state.globalError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13),
+                ),
+              ),
+            if (subscriptions.isEmpty && state.globalError == null)
+              const Text('暂无订阅')
+            else
+              Flexible(
+                child: RefreshIndicator(
+                  onRefresh: () => ref.read(calendarSubscriptionsProvider.notifier).refresh(),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: subscriptions.length,
+                    itemBuilder: (context, index) {
+                      final sub = subscriptions[index];
+                      final lastSync = _formatSyncTime(sub.lastSyncAt);
+                      final imported = sub.lastSyncResult?['imported'] as int?;
+                      final error = sub.lastSyncResult?['error'] as String?;
+                      final isSyncing = state.isSyncing(sub.id);
+                      final syncMessage = state.syncMessage(sub.id);
 
-                        return ListTile(
-                          leading: Icon(
-                            sub.source == 'google'
-                                ? Icons.cloud
-                                : sub.source == 'outlook'
-                                    ? Icons.calendar_today
-                                    : Icons.link,
-                          ),
-                          title: Text(sub.name),
-                          subtitle: Text('来源: ${sub.source} · 上次同步: $lastSync${imported != null ? ' · 导入 $imported 条' : ''}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.sync),
-                                onPressed: () => _syncSubscription(sub.id),
+                      return ListTile(
+                        leading: Icon(
+                          sub.source == 'google'
+                              ? Icons.cloud
+                              : sub.source == 'outlook'
+                                  ? Icons.calendar_today
+                                  : Icons.link,
+                        ),
+                        title: Text(sub.name),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('来源: ${sub.source} · 上次同步: $lastSync'),
+                            if (imported != null) Text('导入 $imported 条事件'),
+                            if (error != null)
+                              Text(
+                                '失败: $error',
+                                style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () => _deleteSubscription(sub.id),
+                            if (syncMessage != null && error == null)
+                              Text(
+                                syncMessage,
+                                style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                          ],
+                        ),
+                        isThreeLine: error != null || syncMessage != null || imported != null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: isSyncing
+                                  ? const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.sync),
+                              onPressed: isSyncing ? null : () => _syncSubscription(sub.id),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _deleteSubscription(sub.id),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
+                ),
+              ),
           ],
         ),
       ),

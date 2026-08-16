@@ -2875,3 +2875,72 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - 前端 `ReviewScreen` 尚未提供追问/多轮入口，当前仅支持单次生成复盘。
 - 真机多轮对话摘要触发需要同一 session 下追问 10 次以上，可在 `ai_sessions.summary` 字段查看结果。
 - Week 32：日历订阅自动刷新 UI。
+
+---
+
+## Week 32：日历订阅自动刷新 UI + ReviewScreen 追问入口（2026-08-16）
+
+### 目标
+
+- 日历主页面感知外部订阅同步状态，显示同步中、上次同步结果、失败提示。
+- 订阅弹窗与主页面共享刷新状态，支持手动同步与自动轮询。
+- 复盘页支持多轮追问。
+
+### 已完成工作
+
+1. **重构 `calendar_subscriptions_provider` 状态**
+   - 文件：`apps/mobile/lib/providers/calendar_subscriptions_provider.dart`
+   - 新增 `CalendarSubscriptionsState`：聚合订阅列表、每个订阅的同步中状态、同步结果消息、全局错误、自动刷新通知。
+   - 提供 `hasAnySyncing`、`isSyncing(id)`、`syncMessage(id)`、`latestSuccessSync()` 等便捷访问。
+   - `syncSubscription(id)` 同步过程中更新 `syncing` 与 `syncMessages`。
+   - 自动刷新时若检测到 2 分钟内新完成的同步，设置 `lastSyncNotification`。
+
+2. **增强 `CalendarScreen` 订阅状态展示**
+   - 文件：`apps/mobile/lib/screens/calendar_screen.dart`
+   - 在 `TableCalendar` 上方显示 `_buildSubscriptionStatusCard`：
+     - 任意订阅同步中：显示「正在同步外部日历…」进度卡片。
+     - 最近有成功同步：显示「「XX」X 分钟前同步完成，导入 N 条事件，点击查看详情」卡片。
+     - 有订阅但失败/未同步：显示对应提示卡片。
+   - 使用 `ref.listen` 监听 `lastSyncNotification`，自动刷新时弹出 SnackBar 提示用户。
+   - 页面 `initState` 启动 30 秒自动刷新，`dispose` 停止。
+
+3. **增强「管理外部日历订阅」弹窗**
+   - 原有 `_CalendarSubscriptionsDialog` 已迁移到新的 `CalendarSubscriptionsState`。
+   - 每个订阅显示同步中进度、导入数量、失败错误、同步结果消息。
+   - 同步按钮在同步中时禁用并显示 `CircularProgressIndicator`。
+   - 保留添加 ICS 订阅、连接 Google 日历、下拉刷新功能。
+
+4. **ReviewScreen 支持多轮追问**
+   - 文件：`apps/mobile/lib/providers/review_provider.dart`
+   - `ReviewNotifier` 保存 `_lastSessionId`；生成复盘时读取后端返回的 `sessionId`。
+   - 新增 `followUpReview(followUp)`：调用 `POST /api/v1/ai/review` 并传 `sessionId` + `followUp`。
+   - 文件：`apps/mobile/lib/screens/review_screen.dart`
+   - 复盘内容底部增加追问输入框 + 发送按钮，loading 时禁用。
+
+### 验证
+
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- 后端无需重新部署，日历订阅 API 已支持 `lastSyncAt` / `lastSyncResult`。
+- Flutter 产物：`planning-app/releases/plan-week32.apk`（61.8 MB）。
+
+### 关键文件
+
+- `apps/mobile/lib/providers/calendar_subscriptions_provider.dart`
+- `apps/mobile/lib/screens/calendar_screen.dart`
+- `apps/mobile/lib/providers/review_provider.dart`
+- `apps/mobile/lib/screens/review_screen.dart`
+- `services/api/src/modules/calendar/calendar-sync.service.ts`
+- `services/api/src/modules/calendar/calendar.service.ts`
+- `services/api/src/modules/calendar/calendar.controller.ts`
+
+### 使用方式
+
+- 进入日历页，添加 ICS 订阅或 Google 日历订阅后，主页面会自动轮询同步状态。
+- 手动点击「管理外部日历订阅」→ 单个订阅的同步按钮，可立即触发同步。
+- 后台自动刷新发现新完成同步时，主页面弹 SnackBar 提示。
+- 进入复盘页，选择目标生成复盘后，可在底部输入框继续追问，AI 会基于同一 session 上下文生成新的复盘。
+
+### 遗留与后续
+
+- 当前自动刷新间隔为 30 秒，适合个人使用；如需更实时可缩短间隔或接入 WebSocket 推送。
+- 复盘追问历史没有展示，当前仅保留最新一次复盘结果。

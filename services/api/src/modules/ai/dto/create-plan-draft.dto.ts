@@ -18,14 +18,14 @@ export class CreatePlanDraftDto {
 
   @IsOptional()
   @IsInt()
-  @Min(7)
+  @Min(1)
   @Max(365)
   planDuration?: number = 7;
 
   @IsOptional()
   @IsInt()
-  @Min(7)
-  @Max(30)
+  @Min(1)
+  @Max(90)
   stageLength?: number = 7;
 
   @IsOptional()

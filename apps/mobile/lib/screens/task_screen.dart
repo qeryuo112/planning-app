@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../models/task_model.dart';
 import '../providers/task_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class TaskScreen extends ConsumerStatefulWidget {
   const TaskScreen({super.key});
@@ -174,21 +176,64 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         data: (tasks) {
           final displayTasks = _applyFilterAndSort(tasks);
           if (displayTasks.isEmpty) {
-            return const Center(child: Text('没有符合条件的任务'));
+            return const Center(
+              child: EmptyState(
+                icon: Icons.task_alt,
+                title: '没有符合条件的任务',
+              ),
+            );
           }
           return ListView.builder(
+            padding: const EdgeInsets.all(AppTheme.pagePadding),
             itemCount: displayTasks.length,
             itemBuilder: (_, index) {
               final task = displayTasks[index];
-              return ListTile(
-                title: Text(
-                  task.title,
-                  style: TextStyle(
-                    decoration: task.isDone ? TextDecoration.lineThrough : null,
-                  ),
+              return AppCard(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.energyColor(task.energyLevel).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        task.isDone ? Icons.check_circle : Icons.circle_outlined,
+                        color: task.isDone ? AppTheme.successColor : AppTheme.energyColor(task.energyLevel),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  decoration: task.isDone ? TextDecoration.lineThrough : null,
+                                  color: task.isDone ? const Color(0xFF8B92A8) : const Color(0xFF1A1A2E),
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              StatusChip(status: task.status),
+                              EnergyChip(level: task.energyLevel),
+                              _taskMetaChip(text: _formatDate(task.scheduledDate)),
+                              if (task.durationMinutes != null) _taskMetaChip(text: '${task.durationMinutes} 分钟'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildTaskActions(task),
+                  ],
                 ),
-                subtitle: Text('${task.energyLevel} · ${task.status} · ${_formatDate(task.scheduledDate)}'),
-                trailing: _buildTaskActions(task),
               );
             },
           );
@@ -203,6 +248,17 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     );
   }
 
+  Widget _taskMetaChip({required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F9),
+        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+      ),
+      child: Text(text, style: const TextStyle(fontSize: 12, color: Color(0xFF8B92A8))),
+    );
+  }
+
   String _formatDate(DateTime? date) {
     if (date == null) return '未排期';
     return DateFormat('MM-dd').format(date);
@@ -211,11 +267,11 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   Widget _buildTaskActions(TaskModel task) {
     final notifier = ref.read(tasksProvider(null).notifier);
     if (task.isDone) {
-      return const Icon(Icons.check_circle, color: Colors.green);
+      return const Icon(Icons.check_circle, color: AppTheme.successColor);
     }
     if (task.status == 'skipped') {
       return IconButton(
-        icon: const Icon(Icons.replay, color: Colors.blue),
+        icon: const Icon(Icons.replay, color: AppTheme.primaryColor),
         tooltip: '补打卡',
         onPressed: () => notifier.makeupTask(task.id),
       );
@@ -224,12 +280,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          icon: const Icon(Icons.schedule, color: Colors.orange),
+          icon: const Icon(Icons.schedule, color: AppTheme.warningColor),
           tooltip: '延期',
           onPressed: () => _showPostponeDialog(task),
         ),
         IconButton(
-          icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+          icon: const Icon(Icons.check_circle_outline, color: AppTheme.successColor),
           tooltip: '完成',
           onPressed: () => notifier.completeTask(task.id),
         ),

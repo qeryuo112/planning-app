@@ -18,10 +18,12 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
     text: '我想3个月通过英语四级，每天40分钟',
   );
   final _followUpController = TextEditingController();
+  final _planDurationController = TextEditingController(text: '30');
+  final _stageLengthController = TextEditingController(text: '7');
   String? _selectedFeedback;
   bool _approving = false;
-  int _planDuration = 30;
-  int _stageLength = 7;
+  int get _planDuration => int.tryParse(_planDurationController.text) ?? 30;
+  int get _stageLength => int.tryParse(_stageLengthController.text) ?? 7;
   bool _advancing = false;
   bool _deleting = false;
   bool _isStreaming = false;
@@ -141,7 +143,19 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
   void dispose() {
     _inputController.dispose();
     _followUpController.dispose();
+    _planDurationController.dispose();
+    _stageLengthController.dispose();
     super.dispose();
+  }
+
+  bool _isDurationValid() {
+    final planDuration = int.tryParse(_planDurationController.text);
+    final stageLength = int.tryParse(_stageLengthController.text);
+    if (planDuration == null || stageLength == null) return false;
+    if (planDuration < 1 || planDuration > 365) return false;
+    if (stageLength < 1 || stageLength > 365) return false;
+    if (stageLength > planDuration) return false;
+    return true;
   }
 
   void _trackDraftGenerated(bool isFollowUp) {
@@ -248,33 +262,45 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _planDuration,
-                    decoration: const InputDecoration(labelText: '计划总时长'),
-                    items: [7, 14, 30, 60, 90, 180, 365]
-                        .map((d) => DropdownMenuItem(value: d, child: Text('$d 天')))
-                        .toList(),
-                    onChanged: (v) => setState(() => _planDuration = v ?? 30),
+                  child: TextField(
+                    controller: _planDurationController,
+                    decoration: const InputDecoration(
+                      labelText: '计划总时长（天）',
+                      hintText: '例如 30',
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _stageLength,
-                    decoration: const InputDecoration(labelText: '每阶段长度'),
-                    items: [7, 14, 30]
-                        .map((s) => DropdownMenuItem(value: s, child: Text('$s 天')))
-                        .toList(),
-                    onChanged: (v) => setState(() => _stageLength = v ?? 7),
+                  child: TextField(
+                    controller: _stageLengthController,
+                    decoration: const InputDecoration(
+                      labelText: '每阶段长度（天）',
+                      hintText: '例如 7',
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
               ],
             ),
+            if (!_isDurationValid()) ...[
+              const SizedBox(height: 8),
+              Text(
+                '阶段时长不能大于计划总时长，且两者都应为 1~365 的正整数',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: (_isStreaming || draftAsync.isLoading) ? null : _generate,
+                onPressed: (_isStreaming || draftAsync.isLoading || !_isDurationValid()) ? null : _generate,
                 child: _isStreaming
                     ? const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -569,8 +595,14 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
           TextButton(
             onPressed: () => setState(() {
               _selectedTemplateId = _recommendedTemplate!['id'] as String?;
-              _planDuration = (_recommendedTemplate!['defaultPlanDuration'] as int?) ?? _planDuration;
-              _stageLength = (_recommendedTemplate!['defaultStageLength'] as int?) ?? _stageLength;
+              final defaultPlanDuration = _recommendedTemplate!['defaultPlanDuration'] as int?;
+              final defaultStageLength = _recommendedTemplate!['defaultStageLength'] as int?;
+              if (defaultPlanDuration != null) {
+                _planDurationController.text = defaultPlanDuration.toString();
+              }
+              if (defaultStageLength != null) {
+                _stageLengthController.text = defaultStageLength.toString();
+              }
             }),
             child: const Text('选用'),
           ),
@@ -602,8 +634,14 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
               _selectedTemplateId = null;
             } else {
               _selectedTemplateId = id;
-              _planDuration = (t['defaultPlanDuration'] as int?) ?? _planDuration;
-              _stageLength = (t['defaultStageLength'] as int?) ?? _stageLength;
+              final defaultPlanDuration = t['defaultPlanDuration'] as int?;
+              final defaultStageLength = t['defaultStageLength'] as int?;
+              if (defaultPlanDuration != null) {
+                _planDurationController.text = defaultPlanDuration.toString();
+              }
+              if (defaultStageLength != null) {
+                _stageLengthController.text = defaultStageLength.toString();
+              }
             }
           }),
         );

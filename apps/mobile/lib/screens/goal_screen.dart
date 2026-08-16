@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/goal_provider.dart';
 import '../providers/social_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'ai_plan_draft_screen.dart';
 
 class GoalScreen extends ConsumerStatefulWidget {
@@ -201,38 +203,86 @@ class _GoalScreenState extends ConsumerState<GoalScreen> {
       body: goalsAsync.when(
         data: (goals) {
           if (goals.isEmpty) {
-            return const Center(child: Text('暂无目标'));
+            return const Center(
+              child: EmptyState(
+                icon: Icons.flag_outlined,
+                title: '暂无目标',
+                subtitle: '点击右下角创建第一个目标',
+              ),
+            );
           }
           return ListView.builder(
+            padding: const EdgeInsets.all(AppTheme.pagePadding),
             itemCount: goals.length,
             itemBuilder: (_, index) {
               final goal = goals[index];
-              return ListTile(
-                title: Text(goal.title),
-                subtitle: _GoalStatsSubtitle(goalId: goal.id),
+              return AppCard(
                 onTap: () => _showGoalStats(goal.id),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(goal.status),
-                    IconButton(
-                      icon: const Icon(Icons.share),
-                      tooltip: '共享目标',
-                      onPressed: () => _shareGoal(goal.id, goal.title),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.auto_awesome),
-                      tooltip: 'AI 规划',
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AiPlanDraftScreen(goalId: goal.id),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.flag, color: AppTheme.primaryColor),
                         ),
-                      ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                goal.title,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              _GoalStatsSubtitle(goalId: goal.id),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.share, color: Color(0xFF8B92A8)),
+                              tooltip: '共享目标',
+                              onPressed: () => _shareGoal(goal.id, goal.title),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.auto_awesome, color: AppTheme.secondaryColor),
+                              tooltip: 'AI 规划',
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AiPlanDraftScreen(goalId: goal.id),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: AppTheme.errorColor),
+                              tooltip: '删除目标',
+                              onPressed: () => _deleteGoal(goal.id, goal.title),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: '删除目标',
-                      onPressed: () => _deleteGoal(goal.id, goal.title),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F4F9),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        goal.status,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF5B6278), fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ],
                 ),
@@ -264,7 +314,7 @@ class _GoalStatsSubtitle extends ConsumerWidget {
       future: statsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text('加载中...', style: TextStyle(fontSize: 12));
+          return const Text('加载中...', style: TextStyle(fontSize: 12, color: Color(0xFF8B92A8)));
         }
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const Text('');
@@ -278,15 +328,19 @@ class _GoalStatsSubtitle extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            LinearProgressIndicator(
-              value: progress,
-              minHeight: 4,
-              borderRadius: BorderRadius.circular(2),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: const Color(0xFFEEF1F6),
+                valueColor: AlwaysStoppedAnimation<Color>(progress >= 1 ? AppTheme.successColor : AppTheme.primaryColor),
+              ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               '${(progress * 100).toStringAsFixed(0)}% · 连续 $streak 天 · ${milestones.length} 个里程碑',
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8B92A8)),
             ),
           ],
         );

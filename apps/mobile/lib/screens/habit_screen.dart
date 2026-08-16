@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/habit_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import '../screens/habit_detail_screen.dart';
 
 class HabitScreen extends ConsumerStatefulWidget {
@@ -131,29 +133,67 @@ class _HabitScreenState extends ConsumerState<HabitScreen> {
         data: (habits) {
           final displayHabits = _applyFilterAndSort(habits);
           if (displayHabits.isEmpty) {
-            return const Center(child: Text('没有符合条件的习惯'));
+            return const Center(
+              child: EmptyState(
+                icon: Icons.loop,
+                title: '没有符合条件的习惯',
+              ),
+            );
           }
           return ListView.builder(
+            padding: const EdgeInsets.all(AppTheme.pagePadding),
             itemCount: displayHabits.length,
             itemBuilder: (_, index) {
               final habit = displayHabits[index];
-              return ListTile(
-                title: Text(habit.title),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${habit.frequency} · 能量 ${habit.energyLevel}'),
-                    _HabitStreakSubtitle(habitId: habit.id),
-                  ],
-                ),
+              return AppCard(
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => HabitDetailScreen(habit: habit),
                   ),
                 ),
-                trailing: ElevatedButton(
-                  onPressed: () => ref.read(habitsProvider.notifier).checkin(habit.id),
-                  child: const Text('打卡'),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warningColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.local_fire_department_outlined, color: AppTheme.warningColor),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            habit.title,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              _habitMetaChip(text: _frequencyLabel(habit.frequency)),
+                              EnergyChip(level: habit.energyLevel),
+                              _HabitStreakSubtitle(habitId: habit.id),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => ref.read(habitsProvider.notifier).checkin(habit.id),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.warningColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      ),
+                      child: const Text('打卡'),
+                    ),
+                  ],
                 ),
               );
             },
@@ -166,6 +206,26 @@ class _HabitScreenState extends ConsumerState<HabitScreen> {
         onPressed: _showCreateDialog,
         child: const Icon(Icons.add),
       ),
+    );
+  }
+
+  String _frequencyLabel(String frequency) {
+    return switch (frequency) {
+      'daily' => '每天',
+      'weekly' => '每周',
+      'weekdays' => '工作日',
+      _ => frequency,
+    };
+  }
+
+  Widget _habitMetaChip({required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F9),
+        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+      ),
+      child: Text(text, style: const TextStyle(fontSize: 12, color: Color(0xFF8B92A8))),
     );
   }
 

@@ -6,6 +6,7 @@ import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/today_screen.dart';
+import 'theme/app_theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -58,10 +59,7 @@ class PlanningApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Plan',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2F6FED)),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme(),
       home: const LoginScreen(),
     );
   }

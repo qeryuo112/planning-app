@@ -30,11 +30,14 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   Future<void> _generateReview() async {
     if (_selectedGoalId == null) return;
+    final goals = ref.read(goalsProvider).valueOrNull ?? [];
+    final goal = goals.firstWhere((g) => g.id == _selectedGoalId);
     final endDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
     await ref.read(reviewProvider.notifier).generateReview(
           _selectedGoalId!,
           period: _period,
           endDate: endDate,
+          goalTitle: goal.title,
         );
   }
 
@@ -62,14 +65,25 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 if (goals.isEmpty) {
                   return const Text('暂无目标，请先创建目标');
                 }
-                return DropdownButtonFormField<String>(
-                  initialValue: _selectedGoalId ?? goals.first.id,
-                  decoration: const InputDecoration(labelText: '选择目标'),
-                  items: goals.map((g) => DropdownMenuItem(
-                    value: g.id,
-                    child: Text(g.title, overflow: TextOverflow.ellipsis),
-                  )).toList(),
-                  onChanged: (v) => setState(() => _selectedGoalId = v),
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('选择目标', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    DropdownButton<String>(
+                      value: _selectedGoalId ?? goals.first.id,
+                      isExpanded: true,
+                      underline: Container(height: 1, color: Colors.grey.shade400),
+                      items: goals.map((g) => DropdownMenuItem(
+                        value: g.id,
+                        child: Text(g.title, overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: (v) {
+                        setState(() => _selectedGoalId = v);
+                        ref.read(reviewProvider.notifier).clear();
+                      },
+                    ),
+                  ],
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -118,11 +132,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             const SizedBox(height: 24),
             Expanded(
               child: reviewAsync.when(
-                data: (review) {
-                  if (review == null) {
+                data: (state) {
+                  if (state.review == null) {
                     return const Center(child: Text('选择目标后生成复盘'));
                   }
-                  return _buildReviewContent(review);
+                  return _buildHistory(state.messages, state.review!);
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('生成失败: $e')),
@@ -134,82 +148,122 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     );
   }
 
-  Widget _buildReviewContent(Map<String, dynamic> review) {
+  Widget _buildHistory(List<Map<String, dynamic>> messages, Map<String, dynamic> latestReview) {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            itemCount: messages.length,
+            itemBuilder: (context, index) {
+              final msg = messages[index];
+              final role = msg['role'] as String?;
+              if (role == 'assistant') {
+                return _buildAssistantMessage(msg['content'] as Map<String, dynamic>, isLatest: index == messages.length - 1);
+              }
+              return _buildUserMessage(msg['content'] as String? ?? '');
+            },
+          ),
+        ),
+        _buildFollowUpInput(),
+      ],
+    );
+  }
+
+  Widget _buildUserMessage(String text) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+        child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+      ),
+    );
+  }
+
+  Widget _buildAssistantMessage(Map<String, dynamic> review, {bool isLatest = false}) {
     final summary = review['summary'] as String? ?? '';
     final insights = (review['insights'] as List<dynamic>?) ?? [];
     final nextActions = (review['nextActions'] as List<dynamic>?) ?? [];
     final fallback = review['fallback'] == true;
     final error = review['error'] as String?;
 
-    return ListView(
-      children: [
-        if (fallback) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (fallback) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.warning_amber, color: Colors.orange, size: 18),
-                    SizedBox(width: 8),
-                    Text('当前使用占位复盘', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                    const Row(
+                      children: [
+                        Icon(Icons.warning_amber, color: Colors.orange, size: 18),
+                        SizedBox(width: 8),
+                        Text('当前使用占位复盘', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                      ],
+                    ),
+                    if (error != null && error.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(error, style: const TextStyle(fontSize: 12, color: Colors.orange)),
+                    ],
                   ],
                 ),
-                if (error != null && error.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(error, style: const TextStyle(fontSize: 12, color: Colors.orange)),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('总结', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(summary),
-              ],
-            ),
-          ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text('总结', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(summary),
+            if (insights.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('洞察', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              ...insights.map((i) => Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.lightbulb_outline, size: 16),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text(i as String)),
+                    ],
+                  )),
+            ],
+            if (nextActions.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('下一步', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              ...nextActions.map((a) => Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.arrow_forward, size: 16),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text(a as String)),
+                    ],
+                  )),
+            ],
+          ],
         ),
-        const SizedBox(height: 16),
-        if (insights.isNotEmpty) ...[
-          Text('洞察', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...insights.map((i) => Card(
-                child: ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.lightbulb_outline),
-                  title: Text(i as String),
-                ),
-              )),
-          const SizedBox(height: 16),
-        ],
-        if (nextActions.isNotEmpty) ...[
-          Text('下一步', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...nextActions.map((a) => Card(
-                child: ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.arrow_forward),
-                  title: Text(a as String),
-                ),
-              )),
-        ],
-        const SizedBox(height: 24),
-        _buildFollowUpInput(),
-      ],
+      ),
     );
   }
 

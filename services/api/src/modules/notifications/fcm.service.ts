@@ -25,6 +25,15 @@ export class FcmService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaClient,
   ) {
+    // 若配置了 Google API 代理（用于国内服务器访问 FCM/Google OAuth2），
+    // 在初始化 Firebase 前设置 HTTPS_PROXY/HTTP_PROXY，google-auth-library 会自动读取。
+    const googleApiProxy = this.configService.get<string>("GOOGLE_API_PROXY");
+    if (googleApiProxy && googleApiProxy.trim().length > 0) {
+      process.env.HTTPS_PROXY = googleApiProxy.trim();
+      process.env.HTTP_PROXY = googleApiProxy.trim();
+      this.logger.log(`已配置 Google API 代理: ${googleApiProxy.trim()}`);
+    }
+
     let credentialsJson = this.configService.get<string>(
       "GOOGLE_APPLICATION_CREDENTIALS_JSON",
     );

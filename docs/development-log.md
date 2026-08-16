@@ -2994,3 +2994,62 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 
 - 若需在无网络环境下也能进入主界面，需要本地离线身份校验策略（如仅校验 JWT 签名/过期时间，不强制联网），目前个人版以联网校验为准。
 - 服务端 FCM 推送仍受国内网络限制，个人版以本地通知为主。
+
+
+---
+
+## 追问历史、提醒实时化与 FCM 代理支持（2026-08-16）
+
+### 目标
+
+解决用户提出的三个遗留问题：
+1. 复盘页追问历史展示。
+2. 更短间隔或 WebSocket 实时同步提醒。
+3. 服务器代理配置后重新开启 FCM 远程推送。
+
+### 修复内容
+
+1. **复盘页追问历史展示**
+   - 文件：`apps/mobile/lib/providers/review_provider.dart`、`apps/mobile/lib/screens/review_screen.dart`
+   - 引入 `ReviewState`：同时保存最新复盘与消息历史列表（`role: user/assistant` + `content` + `createdAt`）。
+   - 生成复盘时自动把用户请求与 AI 复盘加入历史；发送追问时自动把追问文本与新的 AI 复盘加入历史。
+   - `ReviewScreen` 使用 `ListView` 展示聊天历史：用户消息右对齐气泡，AI 消息左对齐卡片（包含总结/洞察/下一步）。
+   - 切换目标时清空历史，避免不同目标会话混淆。
+
+2. **更短间隔 / WebSocket 实时同步提醒**
+   - 后端：`services/api/src/modules/reminders/reminders.scheduler.ts` 从每分钟扫描改为每 15 秒扫描（`@Interval(15000)`），到期提醒通过 `SyncEventsService.broadcastToUser` 立即广播 `reminder.triggered`。
+   - Flutter：`apps/mobile/lib/services/sync_engine.dart` 增加 WebSocket 重连配置：启用 `enableReconnection`、初始重连延迟 1 秒、最大 5 秒、随机因子 0.5、连接超时 10 秒，提高实时推送稳定性。
+   - 前端 `RemindersNotifier` 已监听 `reminder.triggered` 并通过 `NotificationService.showInstant` 弹本地通知；结合更短扫描间隔与更稳定的 WebSocket，提醒触达更实时。
+
+3. **FCM 代理支持**
+   - 文件：`services/api/src/modules/notifications/fcm.service.ts`、`services/api/.env.example`
+   - 新增 `GOOGLE_API_PROXY` 环境变量；服务初始化时若配置了代理，自动设置 `process.env.HTTPS_PROXY` / `process.env.HTTP_PROXY`，`google-auth-library` 会自动走代理访问 Google OAuth2 / FCM 发送端点。
+   - 未配置代理时保持现有行为，FCM 仍可能因国内网络受限而失败。
+   - 后端已保留 `FcmService.sendToUser` 调用点，`reminders.service.ts` 在 `channel === "push"` 时会调用 FCM 发送远程推送。
+
+### 部署
+
+- 后端：本地构建 `services/api` 后上传 `dist/` 到服务器，重启 `planning-api.service`。
+- 前端：构建 `plan-week33.apk`（或对应版本产物）。
+- 服务器：在 `/opt/planning-app/.env` 中填入 `GOOGLE_API_PROXY=http://your-proxy:port` 后重启服务，即可重新尝试 FCM 远程推送。
+
+### 验证
+
+- `npm run build -w services/api`：通过 ✅
+- `npm run test -w services/api -- --testPathPattern=reminders`：通过 ✅
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+
+### 关键文件
+
+- `apps/mobile/lib/providers/review_provider.dart`
+- `apps/mobile/lib/screens/review_screen.dart`
+- `apps/mobile/lib/services/sync_engine.dart`
+- `services/api/src/modules/reminders/reminders.scheduler.ts`
+- `services/api/src/modules/notifications/fcm.service.ts`
+- `services/api/.env.example`
+
+### 遗留与后续
+
+- FCM 代理需要用户在服务器上真实配置可用代理后才能验证端到端推送；代码侧已就绪。
+- 若服务器无可用代理，个人版仍依赖本地通知 + WebSocket 实时提醒。
+- 复盘历史目前仅在当前会话内存中保留，切换目标/退出后清空；如需跨会话保留，可在后续版本通过后端 `GET /ai/sessions/:id/messages` 接口读取持久化历史。

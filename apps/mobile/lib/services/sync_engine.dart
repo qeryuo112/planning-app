@@ -98,6 +98,11 @@ class SyncEngine {
           .setTransports(['websocket'])
           .setQuery({'token': token})
           .enableAutoConnect()
+          .enableReconnection()
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
+          .setRandomizationFactor(0.5)
+          .setTimeout(10000)
           .build(),
     );
 

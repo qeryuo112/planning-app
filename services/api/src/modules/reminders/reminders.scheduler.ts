@@ -1,10 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Interval } from "@nestjs/schedule";
 import { RemindersService } from "./reminders.service";
 
 /**
  * 提醒定时任务
- * 每分钟扫描一次到期的 pending 提醒并广播。
+ * 每 15 秒扫描一次到期的 pending 提醒并广播，确保 WebSocket 实时推送更及时。
  */
 @Injectable()
 export class RemindersScheduler {
@@ -12,7 +12,7 @@ export class RemindersScheduler {
 
   constructor(private readonly remindersService: RemindersService) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Interval(15000)
   async handleDueReminders() {
     this.logger.debug("定时任务：扫描到期提醒");
 

@@ -383,7 +383,7 @@
   - **Week 16 遗留**：未实现 Google/Outlook OAuth 完整功能，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步后端 cron 已存在，UI 同步状态提示待增强（Week 32）。
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
   - **Week 31 遗留**：`ReviewScreen` 前端尚未提供追问入口；`AiPlanDraftScreen` 已支持多轮追问与会话历史展示。**（Week 32 已解决：ReviewScreen 已增加追问输入框）**
-  - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；但国内服务器无法访问 Google OAuth2 服务，远程 FCM 推送发送失败，个人使用版暂不启用远程推送，本地通知可用。
+  - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；代码已支持 `GOOGLE_API_PROXY` 环境变量，配置可用代理后可重新尝试 FCM 远程推送。未配置代理时受国内网络限制，个人版仍暂不启用远程推送，本地通知可用。
   - **登录与启动体验（已修复）**：原登录流程 `await _sync.initialize()` + `await FcmService().uploadToken()` 会阻塞 UI；无 VPN 时 WebSocket/API 无超时导致无限 loading。已通过 `ApiClient` 15 秒超时、同步后台化、新增 `SplashScreen` 自动校验 token 修复。详见 `development-log.md`「登录与启动体验修复」。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。

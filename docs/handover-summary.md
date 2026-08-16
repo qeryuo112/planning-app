@@ -504,6 +504,7 @@ Week 18 已完成，当前阶段明确为**个人使用版本**，暂不进入�
 - `decisions/2026-08-11-*.md`：各 Week 用户决策记录。
 - `decisions/2026-08-14-Week16外部集成决策.md`：Week 16 外部集成方案决策。
 - `planning-app/docs/development-log.md`：开发日志。
+- `planning-app/docs/项目开发总结报告.md`：项目全周期开发总结、已实现功能、未实现功能、环境状态与后续建议（**重要，compact 须保留**）。
 - `planning-app/docs/development-roadmap.md`：后续 Week 开发路线图（**重要，compact 须保留**）。
 - `planning-app/docs/api.md`：API 文档。
 - `planning-app/docs/architecture/offline-sync.md`：离线同步架构。

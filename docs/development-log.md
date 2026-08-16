@@ -2574,3 +2574,60 @@ Week 9 候选方向：
 - 需真机安装 `planning-app/releases/planning-app-week28-v3.apk` 验证上述三点。
 - 应用启动白屏问题已在 Week 28 v2 APK 修复；本次 v3 构建未回退相关代码。
 - 建议继续运行 5~10 分钟长测，验证删除落库计划后多端同步事件正常。
+
+---
+
+## Week 28 后续 v2：AI 生成页滚动与目标删除级联（2026-08-16）
+
+### 目标
+
+修复用户真机测试后反馈的两个问题：
+1. AI 生成计划主页需要滚动条，否则看不到下方内容。
+2. 删除功能要支持已经入库、正在实施的目标，删除目标时级联删除相关数据。
+
+### 已完成工作
+
+1. **AI 生成计划主页添加滚动**
+   - 文件：`apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+   - 问题：原 `build` 方法使用 `Padding` + `Column`，内容超过屏幕时无法滚动。
+   - 修复：在最外层使用 `SingleChildScrollView` 包裹 `Padding` + `Column`。
+
+2. **目标删除支持级联删除关联数据**
+   - 文件：
+     - 前端：`apps/mobile/lib/screens/goal_screen.dart`、`apps/mobile/lib/providers/goal_provider.dart`、`apps/mobile/lib/services/local_database.dart`
+     - 后端：`services/api/src/modules/goals/goals.service.ts`
+   - 问题：原 `GoalsService.remove` 只执行 `prisma.goal.delete`，由于 Prisma 外键为 `SetNull` 或独立关联，projects、tasks、habits、checkins、reminders、calendarEvents、planVersions 等数据不会被级联清理。
+   - 修复：
+     - 后端 `remove` 改为事务操作：
+       - 删除该 goal 的 `PlanVersion`。
+       - 读取 milestones / projects / tasks / habits，删除关联 `CalendarEvent`、`Checkin`、`Reminder`。
+       - 删除 `Task`、`Project`、`Milestone`、`Habit`、`Goal`。
+       - 广播 `goal.deleted` / `task.deleted` / `habit.deleted` 同步事件。
+     - 前端 `GoalsNotifier` 新增 `deleteGoal(id)`，调用 `DELETE /goals/$id` 并乐观更新本地 state；`_listenSync` 监听 `goal.deleted` 自动刷新列表。
+     - `LocalDatabase` 新增 `deleteGoal(id)` 删除本地 SQLite 中的目标记录。
+     - `GoalScreen` 每个目标卡片右上角增加「删除」图标按钮，带二次确认 Dialog。
+
+### 本地验证与部署
+
+- `C:/Users/Administrator/flutter/bin/flutter analyze`（`apps/mobile`）：No issues found。
+- `npm run build`（`services/api`）：nest build 成功，无错误。
+- Flutter 产物：`planning-app/releases/planning-app-week28-v4.apk`（61.6 MB）。
+- 后端产物：`/tmp/api-dist-week28-v2.tar.gz`（205 KB），已上传至服务器 `/opt/planning-app/services/api/dist/` 并重启 `planning-api.service`。
+- 部署验证：
+  - `GET https://xutaostudy.xyz/api/v1/health` → `{"status":"ok"}` ✅
+  - `DELETE https://xutaostudy.xyz/api/v1/goals/:id` → `401 Unauthorized`（路由已注册，需 JWT）✅
+
+### 关键文件
+
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+- `apps/mobile/lib/screens/goal_screen.dart`
+- `apps/mobile/lib/providers/goal_provider.dart`
+- `apps/mobile/lib/services/local_database.dart`
+- `services/api/src/modules/goals/goals.service.ts`
+
+### 遗留与后续
+
+- 需真机安装 `planning-app/releases/planning-app-week28-v4.apk` 验证：
+  - AI 生成页可以滚动查看所有内容。
+  - 目标页点击删除按钮，二次确认后目标及其关联数据被删除，列表刷新。
+- 建议删除后检查「今日」页与「习惯」页，确认关联任务/习惯已消失。

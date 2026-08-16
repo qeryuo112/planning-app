@@ -73,6 +73,33 @@ class _GoalScreenState extends ConsumerState<GoalScreen> {
     );
   }
 
+  Future<void> _deleteGoal(String goalId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('删除目标：$title'),
+        content: const Text('确认删除该目标及其关联的项目、任务、习惯、打卡与计划版本？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ok = await ref.read(goalsProvider.notifier).deleteGoal(goalId);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? '目标已删除' : '删除失败')),
+      );
+    }
+  }
   Future<void> _shareGoal(String goalId, String title) async {
     final emailController = TextEditingController();
     await showDialog(
@@ -201,6 +228,11 @@ class _GoalScreenState extends ConsumerState<GoalScreen> {
                           builder: (_) => AiPlanDraftScreen(goalId: goal.id),
                         ),
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: '删除目标',
+                      onPressed: () => _deleteGoal(goal.id, goal.title),
                     ),
                   ],
                 ),

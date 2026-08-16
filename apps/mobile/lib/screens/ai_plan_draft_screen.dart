@@ -217,13 +217,14 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('AI 生成计划')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_usage != null) _buildUsageCard(),
-            const SizedBox(height: 12),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_usage != null) _buildUsageCard(),
+              const SizedBox(height: 12),
             TextField(
               controller: _inputController,
               decoration: const InputDecoration(
@@ -339,6 +340,7 @@ class _AiPlanDraftScreenState extends ConsumerState<AiPlanDraftScreen> {
             _buildDraftPreviewArea(draftAsync),
           ],
         ),
+      ),
       ),
     );
   }

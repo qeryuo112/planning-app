@@ -549,3 +549,41 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
 
 - 代码：`apps/mobile/lib/screens/ai_plan_draft_screen.dart`、`apps/mobile/lib/providers/ai_provider.dart`、`apps/mobile/lib/screens/settings_screen.dart`、`services/api/src/modules/ai/ai.controller.ts`、`services/api/src/modules/ai/ai.service.ts`
 - 文档：`planning-app/docs/development-log.md` 对应章节
+
+---
+
+## 22. Week 28 后续 v2 修复验证记录（2026-08-16）
+
+### 修复内容
+
+1. **AI 生成计划主页滚动**
+   - `AiPlanDraftScreen` 使用 `SingleChildScrollView` 包裹主内容，解决小屏/键盘弹出时下方内容不可见的问题。
+
+2. **目标删除级联清理**
+   - 后端 `DELETE /goals/:id` 现在会事务删除目标关联的 milestones、projects、tasks、habits、checkins、reminders、calendarEvents、planVersions。
+   - 前端 `GoalScreen` 每个目标卡片增加删除按钮，带二次确认；删除后列表立即刷新。
+
+### 待验证指标
+
+| 检查项 | 期望结果 | 验证方式 |
+|--------|----------|----------|
+| AI 生成页滚动 | 可以上下滚动查看所有输入、模板、生成按钮、预览卡片 | 真机操作 |
+| 目标页删除按钮 | 每个目标卡片右上角出现删除图标 | 真机操作 |
+| 删除目标二次确认 | 弹出 Dialog，确认后才执行删除 | 真机操作 |
+| 删除目标后列表 | 目标从列表中消失，提示「目标已删除」 | 真机操作 |
+| 删除目标后关联数据 | 今日页、习惯页中该目标的任务/习惯消失 | 真机操作 + 后端日志 |
+| 删除后同步事件 | 后端日志出现 `goal.deleted` / `task.deleted` / `habit.deleted` | 后端日志 |
+| 长测 5~10 分钟 | 无崩溃、无异常日志 | logcat |
+
+### 构建产物
+
+- APK：`planning-app/releases/planning-app-week28-v4.apk`（61.6 MB）
+- 后端：`/tmp/api-dist-week28-v2.tar.gz`（已部署）
+
+### 关联文件
+
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+- `apps/mobile/lib/screens/goal_screen.dart`
+- `apps/mobile/lib/providers/goal_provider.dart`
+- `apps/mobile/lib/services/local_database.dart`
+- `services/api/src/modules/goals/goals.service.ts`

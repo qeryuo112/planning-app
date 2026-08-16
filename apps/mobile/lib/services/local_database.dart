@@ -202,6 +202,11 @@ class LocalDatabase {
     await db.delete('goals');
   }
 
+  Future<void> deleteGoal(String id) async {
+    final db = await database;
+    await db.delete('goals', where: 'id = ?', whereArgs: [id]);
+  }
+
   // ==================== Tasks ====================
 
   Future<void> upsertTask(TaskModel task, {bool dirty = false}) async {

@@ -123,10 +123,128 @@ export class GoalsService {
   }
 
   async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
-    await this.prisma.goal.delete({ where: { id } });
+    this.logger.debug(`删除目标: ${id}, user=${userId}`);
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id, userId },
+    });
+
+    if (!goal) {
+      throw new NotFoundException("目标不存在");
+    }
+
+    const goalId = goal.id;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 删除该 goal 关联的计划版本
+      await tx.planVersion.deleteMany({ where: { goalId } });
+
+      // 读取里程碑、项目、任务、习惯
+      const milestones = await tx.milestone.findMany({
+        where: { goalId },
+        select: { id: true },
+      });
+      const milestoneIds = milestones.map((m) => m.id);
+
+      const projects = await tx.project.findMany({
+        where: { goalId },
+        select: { id: true },
+      });
+      const projectIds = projects.map((p) => p.id);
+
+      const tasks = await tx.task.findMany({
+        where: {
+          OR: [
+            { projectId: { in: projectIds } },
+            { milestoneId: { in: milestoneIds } },
+          ],
+        },
+        select: { id: true },
+      });
+      const taskIds = tasks.map((t) => t.id);
+
+      const habitLinks = await tx.goalHabitLink.findMany({
+        where: { goalId },
+        select: { habitId: true },
+      });
+      const habitIds = habitLinks.map((h) => h.habitId);
+
+      // 删除关联的日历事件、打卡、提醒
+      await tx.calendarEvent.deleteMany({
+        where: { taskId: { in: taskIds } },
+      });
+      await tx.checkin.deleteMany({
+        where: {
+          OR: [
+            { taskId: { in: taskIds } },
+            { habitId: { in: habitIds } },
+          ],
+        },
+      });
+      await tx.reminder.deleteMany({
+        where: {
+          OR: [
+            { targetType: "goal", targetId: goalId },
+            { targetType: "task", targetId: { in: taskIds } },
+            { targetType: "habit", targetId: { in: habitIds } },
+          ],
+        },
+      });
+
+      // 删除任务、项目、里程碑、习惯、目标
+      await tx.task.deleteMany({
+        where: {
+          OR: [
+            { projectId: { in: projectIds } },
+            { milestoneId: { in: milestoneIds } },
+          ],
+        },
+      });
+      await tx.project.deleteMany({ where: { goalId } });
+      await tx.milestone.deleteMany({ where: { goalId } });
+      await tx.habit.deleteMany({ where: { id: { in: habitIds } } });
+      await tx.goal.delete({ where: { id: goalId } });
+
+      return { taskIds, habitIds, projectIds, milestoneIds, goalId };
+    });
+
+    // 广播同步删除事件
+    await this.syncEvents.createEvent(userId, {
+      eventType: "goal.deleted",
+      targetType: "goal",
+      targetId: result.goalId,
+      payload: { source: "goal.delete" },
+    });
+    for (const taskId of result.taskIds) {
+      await this.syncEvents.createEvent(userId, {
+        eventType: "task.deleted",
+        targetType: "task",
+        targetId: taskId,
+        payload: { source: "goal.delete" },
+      });
+    }
+    for (const habitId of result.habitIds) {
+      await this.syncEvents.createEvent(userId, {
+        eventType: "habit.deleted",
+        targetType: "habit",
+        targetId: habitId,
+        payload: { source: "goal.delete" },
+      });
+    }
+
+    void this.analytics.track({
+      userId,
+      eventType: "goal.deleted",
+      targetId: id,
+      metadata: {
+        goalId: result.goalId,
+        taskCount: result.taskIds.length,
+        habitCount: result.habitIds.length,
+      },
+    });
+
     emitReportCacheInvalidation(userId);
-    return { id, deleted: true };
+    return { id, deleted: true, goalId: result.goalId };
   }
 
   async stats(userId: string, id: string) {

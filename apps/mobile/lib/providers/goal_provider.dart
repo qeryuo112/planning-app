@@ -27,7 +27,7 @@ class GoalsNotifier extends StateNotifier<AsyncValue<List<GoalModel>>> {
   void _listenSync() {
     _syncSub = _sync.syncEvents.listen((event) {
       final type = event['eventType'] as String?;
-      if (type == 'goal.created') {
+      if (type == 'goal.created' || type == 'goal.deleted') {
         fetchGoals();
       }
     });
@@ -70,6 +70,19 @@ class GoalsNotifier extends StateNotifier<AsyncValue<List<GoalModel>>> {
     } catch (e, st) {
       state = AsyncValue.error(e, st);
       return null;
+    }
+  }
+
+  Future<bool> deleteGoal(String id) async {
+    try {
+      await _client.delete('/goals/$id');
+      await _db.deleteGoal(id);
+      final current = state.value ?? [];
+      state = AsyncValue.data(current.where((g) => g.id != id).toList());
+      return true;
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return false;
     }
   }
 

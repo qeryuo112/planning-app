@@ -3108,3 +3108,24 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 
 - `planning-app/releases/plan-fcm-notification.apk`
 
+
+---
+
+## FCM 远程推送最终验证（2026-08-16）
+
+### 结论
+
+- 服务端通过 mihomo 代理已成功把 FCM 消息投递到 Google（`messageId=...`）。
+- 手机端在国内直连网络下无法获取 Firebase Installations auth token（`Failed to get FIS auth token`），因此即使服务端成功，真机也收不到通知。
+- **手机挂上 VPN 后，FCM 远程推送立即送达**，证明整条链路（服务端 → 代理 → FCM → 手机）是通的。
+
+### 使用条件
+
+- 服务器必须运行 `/opt/mihomo` 代理（仅 Google/FCM 域名走代理）。
+- 手机端必须能访问 Google 服务（国内网络需挂 VPN / 代理）。
+- 无 VPN 时，个人版以 **本地通知 + WebSocket 实时同步** 作为兜底方案。
+
+### 后续建议
+
+- 个人版：保留当前 FCM + 本地通知双轨方案，不强制 VPN 也能使用。
+- 商业版/国内大规模使用：考虑接入极光、小米、华为等国内推送通道。

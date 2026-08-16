@@ -713,7 +713,7 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 |---|---|---|---|
 | Week 29 | FCM 推送闭环 | 配置 Firebase Admin SDK 服务账号，真机 token 上传成功 | 受国内网络限制，远程推送暂不可用；本地通知可用 |
 | Week 30 | 行为埋点补全 | 客户端批量/重试上传、关键事件覆盖、后端单测 | 埋点数据完整可查询 |
-| Week 31 | AI 多轮对话增强 | 对话历史展示、长会话模型摘要、replan/review 支持多轮 | 可连续追问调整计划 |
+| Week 31 | AI 多轮对话增强 | maybeSummarize 真正调用 cheap 模型；会话摘要；createDraft/replan/review 支持多轮 | 后端实现完成，ReviewScreen 追问入口待后续补充 |
 | Week 32 | 日历订阅自动刷新 UI | 主页面同步状态、同步中/结果提示、自动刷新事件 | 用户感知订阅同步状态 |
 
 ---
@@ -730,19 +730,17 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 
 ## 20. 下一步行动（当前待执行）
 
-当前基线为 **Week 30 结束**。用户已确认 Android 真机核心流程无问题。根据 `decisions/2026-08-16-后续开发优先级调整决策.md`，接下来按顺序推进：
+当前基线为 **Week 31 结束**。用户已确认 Android 真机核心流程无问题。根据 `decisions/2026-08-16-后续开发优先级调整决策.md`，接下来按顺序推进：
 
-1. **Week 31：AI 多轮对话上下文增强**
-   - 增强 `AiPlanDraftScreen` 对话历史展示与追问体验。
-   - `AiSessionService.maybeSummarize` 真正调用 cheap 模型生成摘要。
-   - `replan` / `review` 支持 `sessionId` / `followUp` 多轮上下文。
-
-2. **Week 32：日历订阅自动刷新 UI**
+1. **Week 32：日历订阅自动刷新 UI**
    - 在 `CalendarScreen` 主页面显示订阅同步状态（上次同步时间、同步中、导入数量、失败提示）。
    - 订阅弹窗与主页面共享刷新状态，支持后台自动轮询时提示用户。
 
-3. **FCM 真机端到端验证（Week 29 遗留）**
-   - 在 Android 真机登录测试账号（`planning-test@example.com` / `Test@123456`），确认 `users.fcmToken` 被写入。
-   - 创建一条提醒并等待到期，验证手机收到 FCM 通知。
+2. **ReviewScreen 追问入口（Week 31 遗留）**
+   - 在复盘页面增加「追问/补充」输入框，调用 `POST /api/v1/ai/review` 并传 `sessionId` + `followUp`。
+   - 属于 UI 增强，可在 Week 32 之后或作为小补丁完成。
+
+3. **FCM 远程推送（长期限制）**
+   - 受国内网络限制，个人版暂不启用。后续若接入代理或第三方推送，重新打开。
 
 完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 29+）** 中，作为后续商业版本的开发备份，当前不执行。

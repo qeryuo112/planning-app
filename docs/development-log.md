@@ -2811,3 +2811,67 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - Week 31：增强 AI 多轮对话上下文。
 - Week 32：日历订阅自动刷新 UI。
 - FCM 真机端到端验证仍待用户登录测试账号后触发。
+
+---
+
+## Week 31：增强 AI 多轮对话上下文（2026-08-16）
+
+### 目标
+
+- 后端 `AiSessionService.maybeSummarize` 真正调用 cheap 模型生成会话摘要。
+- 确保 `createDraft` / `replan` / `review` 均支持 `sessionId` + `followUp` 多轮上下文。
+- 补全 `AiSessionService` 单元测试。
+
+### 已完成工作
+
+1. **后端 `AiSessionService.maybeSummarize` 真正调用 cheap 模型**
+   - 文件：`services/api/src/modules/ai/ai-session.service.ts`
+   - 注入 `ConfigService` 与 `ModelAdapter`。
+   - 当 `turnCount >= 10` 且尚未生成摘要时，读取最近 20 条用户/AI 消息。
+   - 构造中文总结 prompt，调用 `AI_CHEAP_MODEL` 生成 100 字以内会话摘要。
+   - 摘要更新到 `ai_sessions.summary` 字段；失败时内部捕获，不影响主流程。
+   - 新增 `resolveCheapModel()` 辅助方法，优先读取 `AI_CHEAP_MODEL`，未配置则回退默认模型。
+
+2. **确认多轮上下文已覆盖 createDraft / replan / review**
+   - `createDraft`：已支持 `sessionId` + `followUp`，保存用户消息到 `ai_messages`，生成历史并传给编排器。
+   - `replan`：已支持 `sessionId` + `followUp`，使用 strong 模型并传递历史。
+   - `review`：已支持 `sessionId` + `followUp`，使用 strong 模型并传递历史。
+
+3. **新增 `AiSessionService` 单元测试**
+   - 文件：`services/api/src/modules/ai/ai-session.service.spec.ts`（新增）
+   - 覆盖：
+     - `getOrCreateSession`：24 小时内复用、无会话时创建。
+     - `getSession`：存在返回、不存在抛异常。
+     - `addMessages`：批量创建并增加 `turnCount`。
+     - `maybeSummarize`：低于阈值不调用、已有摘要不调用、达到阈值调用 cheap 模型生成摘要、未配置 `AI_CHEAP_MODEL` 回退默认模型。
+     - `toChatMessages`：角色/内容映射。
+   - 运行结果：`10 passed`。
+
+4. **后端构建与部署**
+   - 本地构建 `services/api`，上传 `dist/` 到服务器，重启 `planning-api.service`。
+   - 健康检查通过。
+
+### 验证
+
+- `npm run test -w services/api -- --testPathPattern=ai/ai.service.spec.ts`：`16 passed` ✅
+- `npm run test -w services/api -- --testPathPattern=ai/ai-session.service.spec.ts`：`10 passed` ✅
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- Flutter 产物：`planning-app/releases/plan-week31.apk`（61.8 MB）。
+
+### 关键文件
+
+- `services/api/src/modules/ai/ai-session.service.ts`
+- `services/api/src/modules/ai/ai-session.service.spec.ts`
+- `services/api/src/modules/ai/ai.service.ts`
+- `services/api/src/modules/ai/ai.controller.ts`
+- `services/api/src/modules/ai/dto/create-plan-draft.dto.ts`
+- `services/api/src/modules/ai/dto/replan.dto.ts`
+- `services/api/src/modules/ai/dto/review.dto.ts`
+- `apps/mobile/lib/screens/ai_plan_draft_screen.dart`
+- `apps/mobile/lib/providers/ai_provider.dart`
+
+### 遗留与后续
+
+- 前端 `ReviewScreen` 尚未提供追问/多轮入口，当前仅支持单次生成复盘。
+- 真机多轮对话摘要触发需要同一 session 下追问 10 次以上，可在 `ai_sessions.summary` 字段查看结果。
+- Week 32：日历订阅自动刷新 UI。

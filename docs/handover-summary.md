@@ -146,6 +146,8 @@
 - [x] **Week 30 新增**：客户端 `AnalyticsService` 批量/失败缓存/生命周期 flush，覆盖登录、今日页、AI 草案页核心事件
 - [x] **Week 30 新增**：`AnalyticsService` 后端单元测试 `analytics.service.spec.ts`
 - [x] **Week 27 新增**：`AISession`/`AIMessage` 多轮对话上下文，`createDraft`/`replan`/`review` 支持 `sessionId`/`followUp`
+- [x] **Week 31 新增**：`AiSessionService.maybeSummarize` 真正调用 cheap 模型生成会话摘要
+- [x] **Week 31 新增**：`ai-session.service.spec.ts` 单元测试（10 passed）
 - [x] **Week 27 新增**：Flutter `FcmService` 初始化、Token 上传/刷新/后台消息监听（未配置 Firebase 时优雅降级）
 - [x] **Week 27 新增**：Flutter AI 计划页「继续对话」入口与消息气泡列表
 - [x] **Week 27-D 新增**：Inbox 本地优先 + 乐观更新 + 失败回退
@@ -377,8 +379,8 @@
   - **Week 15 遗留**：社交排行榜显示邮箱而非昵称/头像；共享目标未完整实现编辑权限；挑战与目标/习惯未强关联，按全局行为计分；无实时推送。
   - **Week 16 遗留**：未实现 Google/Outlook OAuth 完整功能，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步后端 cron 已存在，UI 同步状态提示待增强（Week 32）。
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
+  - **Week 31 遗留**：`ReviewScreen` 前端尚未提供追问入口；`AiPlanDraftScreen` 已支持多轮追问与会话历史展示。
   - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；但国内服务器无法访问 Google OAuth2 服务，远程 FCM 推送发送失败，个人使用版暂不启用远程推送，本地通知可用。
-  - **Week 24 遗留**：SSE 客户端暂无自动重连与心跳；逐 token 流式输出待后续需要时再实现；模板推荐仍基于关键词硬匹配，可后续引入 embedding 语义匹配。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。
   - 踩坑：旧 `.env` 被删除后需从 `planning-app-backup/.env` 复制；`nest build` 仅生成 `.d.ts` 时需删除 `dist/` 与 `tsconfig.tsbuildinfo` 重编；`bcrypt` 需 `npm rebuild --build-from-source`。

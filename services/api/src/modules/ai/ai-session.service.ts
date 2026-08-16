@@ -1,5 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaClient } from "@prisma/client";
+import { ModelAdapter } from "./model-adapter.service";
 
 export type AiContextType = "goal" | "task" | "review" | "replan" | "general";
 
@@ -15,7 +17,11 @@ export class AiSessionService {
   private readonly logger = new Logger(AiSessionService.name);
   private readonly maxTurnsBeforeSummarize = 10;
 
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly configService: ConfigService,
+    private readonly modelAdapter: ModelAdapter,
+  ) {}
 
   async getOrCreateSession(
     userId: string,
@@ -108,23 +114,49 @@ export class AiSessionService {
     if (session.turnCount < this.maxTurnsBeforeSummarize) return;
     if (session.summary) return; // 暂不重复摘要，后续可增量摘要
 
-    // 占位摘要：取最近用户消息拼接（实际应调用 cheap 模型）
     const recentMessages = await this.prisma.aIMessage.findMany({
       where: { sessionId, role: { in: ["user", "assistant"] } },
-      orderBy: { createdAt: "desc" },
-      take: 5,
+      orderBy: { createdAt: "asc" },
+      take: 20,
     });
 
-    const summary = recentMessages
-      .map((m) => `${m.role}: ${m.content.slice(0, 100)}`)
+    const conversation = recentMessages
+      .map((m) => `${m.role === "user" ? "用户" : "AI"}: ${m.content.slice(0, 300)}`)
       .join("\n");
 
-    await this.prisma.aISession.update({
-      where: { id: sessionId },
-      data: { summary },
-    });
+    const prompt = `请用 100 字以内总结以下 AI 计划教练与用户的多轮对话核心内容，包括：目标主题、用户主要调整要求、当前已达成共识。只输出总结文本，不要输出 JSON 或其他格式。\n\n${conversation}`;
 
-    this.logger.debug(`会话已生成摘要: ${sessionId}`);
+    const cheapModel = this.resolveCheapModel();
+    try {
+      const response = await this.modelAdapter.generateStructured<{ summary: string }>(
+        prompt,
+        {
+          type: "object",
+          properties: { summary: { type: "string", maxLength: 300 } },
+          required: ["summary"],
+        },
+        { modelName: cheapModel },
+      );
+
+      const summary = response.data?.summary?.trim();
+      if (summary) {
+        await this.prisma.aISession.update({
+          where: { id: sessionId },
+          data: { summary },
+        });
+        this.logger.debug(`会话已生成摘要: ${sessionId}`);
+      } else {
+        this.logger.warn(`会话摘要生成结果为空: ${sessionId}`);
+      }
+    } catch (err) {
+      this.logger.warn(`会话摘要生成失败: ${sessionId}, ${(err as Error).message}`);
+    }
+  }
+
+  private resolveCheapModel(): string {
+    const defaultModel = this.modelAdapter.getConfig().model;
+    const configured = this.configService.get<string>("AI_CHEAP_MODEL");
+    return configured?.trim() || defaultModel;
   }
 
   toChatMessages(messages: { role: string; content: string }[]) {

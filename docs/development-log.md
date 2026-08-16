@@ -2636,3 +2636,48 @@ Week 9 候选方向：
 
 - 2026-08-16：用户真机验证 `planning-app-week28-v4.apk`，确认当前已无功能问题。
 - 精力曲线设置、AI 计划详情弹窗、计划删除、AI 生成页滚动、目标删除级联等功能均通过用户验证。
+
+---
+
+## 2026-08-16：App 正式命名为 Plan
+
+### 变更内容
+
+将应用对外名称从「计划型 App / Planning App Mobile」统一为 **Plan**。
+
+1. **Flutter 应用标题**
+   - `apps/mobile/lib/main.dart`：`MaterialApp.title` 从「计划型 App」改为 `Plan`。
+
+2. **Android 应用标签**
+   - `apps/mobile/android/app/src/main/AndroidManifest.xml`：`android:label` 从 `planning_app_mobile` 改为 `Plan`。
+
+3. **iOS 应用显示名称**
+   - `apps/mobile/ios/Runner/Info.plist`：`CFBundleDisplayName` 与 `CFBundleName` 均改为 `Plan`。
+
+4. **包元信息**
+   - `apps/mobile/pubspec.yaml`：`description` 改为 `Plan - AI 个人计划与成长管理（Flutter 客户端）`。
+
+5. **测试用例**
+   - `apps/mobile/test/widget_test.dart`：断言文本改为登录页实际显示的「欢迎回来」。
+
+6. **主要文档标题**
+   - `docs/development-roadmap.md` → `Plan 后续开发路线图`
+   - `docs/testing-plan.md` → `Plan 测试计划`
+   - `docs/testing-phase.md` → `Plan 测试阶段文档`
+   - `docs/handover-summary.md` → `Plan 项目交接文档`
+   - `docs/项目交接文档.md` → `Plan 项目交接文档`
+   - `docs/实现计划.md` → `Plan 实现计划`
+   - `docs/项目阶段总结.md` → `Plan 项目阶段总结`
+   - `docs/项目阶段总结.md` 首段也同步改为「Plan - AI 个人成长管理工具」。
+
+### 不变更项
+
+- Dart 包名 `planning_app_mobile` 与 Android 包名 `com.example.planning_app_mobile` 保持不变，避免破坏 Firebase 配置、Google Services、插件注册与导入语句。
+- 本地 SQLite 文件名 `planning_app.db` 保持不变，避免已有数据迁移问题。
+- 历史 Week 开发日志中的旧名称作为历史记录保留，不追溯修改。
+
+### 验证与产物
+
+- `C:/Users/Administrator/flutter/bin/flutter analyze`：No issues found。
+- Flutter 产物：`planning-app/releases/plan-week28.apk`（61.6 MB）。
+- 安装后系统桌面与应用管理器显示名称为 **Plan**。

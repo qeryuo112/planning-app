@@ -57,7 +57,7 @@ class PlanningApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: '计划型 App',
+      title: 'Plan',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2F6FED)),
         useMaterial3: true,

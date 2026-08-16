@@ -1,4 +1,4 @@
-# 计划型 App 测试阶段文档
+# Plan 测试阶段文档
 
 > 详细测试计划见 [`docs/testing-plan.md`](./testing-plan.md)。本文档记录测试阶段构建产物、环境、问题修复与测试方法速查。
 
@@ -606,3 +606,27 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
 - [x] 应用启动无白屏，可正常进入主界面。
 
 本轮测试阶段结束，当前版本可作为个人使用的稳定基线。后续如新增功能或遇到新 bug，再按相同流程记录并修复。
+
+---
+
+## 24. App 正式命名为 Plan（2026-08-16）
+
+### 变更说明
+
+应用对外名称统一为 **Plan**：
+- Android 桌面标签：`Plan`
+- iOS 显示名称：`Plan`
+- Flutter `MaterialApp.title`：`Plan`
+- 主要文档标题已同步更新。
+
+### 构建产物
+
+- 最新 APK：`planning-app/releases/plan-week28.apk`（61.6 MB）
+- 包名与内部标识仍为 `planning_app_mobile` / `com.example.planning_app_mobile`，以兼容 Firebase 与现有数据。
+
+### 验证方式
+
+1. 安装 `plan-week28.apk`。
+2. 查看 Android 桌面图标下方文字，应为 **Plan**。
+3. 进入系统「设置 → 应用」，应用名称应为 **Plan**。
+4. 应用内无直接展示大标题的位置，但系统任务切换/最近任务中的标题应为 **Plan**。

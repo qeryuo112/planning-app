@@ -16,6 +16,6 @@ void main() {
     await tester.pump();
 
     // Verify that the login screen is shown.
-    expect(find.text('计划型 App'), findsOneWidget);
+    expect(find.text('欢迎回来'), findsOneWidget);
   });
 }

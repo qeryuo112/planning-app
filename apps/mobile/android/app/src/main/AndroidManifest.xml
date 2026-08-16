@@ -5,7 +5,7 @@
     <!-- 个人使用场景：允许无需用户额外授权的精确闹钟（Google Play 上架需满足政策）。 -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <application
-        android:label="planning_app_mobile"
+        android:label="Plan"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">

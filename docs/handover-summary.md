@@ -961,3 +961,61 @@ Week 18 完成后，原计划进入 **Week 19 商业化**（订阅/团队版/数
 - [`docs/testing-phase.md`](./testing-phase.md)
 
 本交接文档保留项目整体交接、环境、进度与部署记录。
+
+---
+
+## 17. 2026-08-16 FCM 代理端到端验证
+
+### 背景
+
+服务器位于国内，FCM（Firebase Cloud Messaging）直连会超时。用户提供一个 Clash 订阅后，部署 mihomo 代理，仅让 Google/FCM 域名走代理，其余直连。
+
+### 服务器配置
+
+- 在 `/opt/mihomo` 安装 mihomo v1.18.8，使用 systemd 运行 `mihomo.service`。
+- 监听 `127.0.0.1:7890`（Mixed HTTP/SOCKS 端口）。
+- YAML 通过 `planning-app/scripts/convert_sub.py` 从订阅转换，默认节点选择 `德国法兰克福-rl(主力)`（VLESS Reality）。
+- 规则只代理 `google.com`、`googleapis.com`、`gstatic.com` 等域名；国内地址直连。
+- 验证代理：
+  - `curl -x http://127.0.0.1:7890 https://www.google.com` → 302
+  - `curl -x http://127.0.0.1:7890 https://fcm.googleapis.com/fcm/send` → 404（说明 FCM 端点可达）
+
+### 后端代码修正
+
+- 文件：`services/api/src/modules/notifications/fcm.service.ts`
+- 仅设置 `HTTPS_PROXY`/`HTTP_PROXY` 环境变量对 `firebase-admin` 内置 HTTP 客户端无效，FCM 请求仍直连并触发 `app/network-timeout`。
+- 修复：引入 `https-proxy-agent`，创建 `HttpsProxyAgent` 后传入 `cert(credential, proxyAgent)` 与 `initializeApp({ credential, httpAgent: proxyAgent })`。
+- 环境变量仍保留，用于 `googleapis`/`google-auth-library` 的 gaxios 路径。
+- 新增依赖：`https-proxy-agent: ^7.0.6`（已写入 `services/api/package.json`）。
+
+### 后端部署
+
+1. 本地构建 `services/api`：`npm run build -w services/api`。
+2. 上传 `dist/` 到服务器 `/opt/planning-app/services/api/dist/`。
+3. 确保 `/opt/planning-app/.env` 包含 `GOOGLE_API_PROXY=http://127.0.0.1:7890`。
+4. 重启：`systemctl restart planning-api`。
+
+### 端到端验证
+
+1. 使用测试账号 `planning-test@example.com` / `Test@123456` 登录。
+2. 创建任务：`POST /api/v1/tasks` → `bc013ef8-5e7f-4275-997c-63e7934c40bd`（示例）。
+3. 创建 `channel=push` 提醒：`POST /api/v1/reminders`，`triggerAt` 设为 30 秒后到期。
+4. 后端 15 秒扫描任务触发后，mihomo 日志出现：
+   ```
+   [TCP] 127.0.0.1:56218 --> fcm.googleapis.com:443 match DomainSuffix(googleapis.com) using PROXY[德国法兰克福-rl(主力)]
+   ```
+5. API 日志未出现 `FCM 推送失败`，说明服务端已成功将推送投递到 FCM HTTP v1。
+6. 若数据库中测试账号 `fcmToken` 对应的真实设备在线，设备应收到标题为「计划提醒」、内容为「你的 task 到期了」的通知。
+
+### 关键状态
+
+- 服务：`planning-api.service` active，内存约 110MB。
+- 代理：`mihomo.service` active，内存约 20MB。
+- 后端当前运行版本：本地构建 `dist/` 已上传并重启。
+- 测试账号当前 `fcmToken`：`fG-aSQytThqwoyrfNLZ4dg:APA91bEmUHYtlG4IzlCyLDDgDeWpllR0hFf2ftxpr-f5Oyo5vtzYe_lTs_z0Y62OVU3wWReecCGQv6Vz6Pw20mf2MjIlGBTtF_wTYbNkuCAPZ6lReFY2lOw`（如设备已更换，需重新上传）。
+
+### 遗留
+
+- 代理节点长期稳定性需观察；订阅失效或节点被封时可切换订阅/节点。
+- 若真机未收到通知，需确认当前登录设备 token 是否已更新到 `users.fcmToken`。
+- 服务器 `/opt/planning-app/fcm_node_test.js` 为临时调试用脚本，可删除。

@@ -10,6 +10,11 @@ import {
 import { getMessaging } from "firebase-admin/messaging";
 import { PrismaClient } from "@prisma/client";
 
+import {
+  HttpsProxyAgent,
+} from "https-proxy-agent";
+import { Agent } from "https";
+
 export interface FcmPayload {
   title: string;
   body: string;
@@ -28,10 +33,14 @@ export class FcmService {
     // 若配置了 Google API 代理（用于国内服务器访问 FCM/Google OAuth2），
     // 在初始化 Firebase 前设置 HTTPS_PROXY/HTTP_PROXY，google-auth-library 会自动读取。
     const googleApiProxy = this.configService.get<string>("GOOGLE_API_PROXY");
+    let proxyAgent: Agent | undefined;
     if (googleApiProxy && googleApiProxy.trim().length > 0) {
+      proxyAgent = new HttpsProxyAgent(googleApiProxy.trim());
       process.env.HTTPS_PROXY = googleApiProxy.trim();
       process.env.HTTP_PROXY = googleApiProxy.trim();
-      this.logger.log(`已配置 Google API 代理: ${googleApiProxy.trim()}`);
+      this.logger.log(
+        `已配置 Google API 代理: ${googleApiProxy.trim()}，并创建代理 Agent`,
+      );
     }
 
     let credentialsJson = this.configService.get<string>(
@@ -58,10 +67,11 @@ export class FcmService {
     }
 
     try {
-      const credential = cert(JSON.parse(credentialsJson));
+      const credential = cert(JSON.parse(credentialsJson), proxyAgent);
       this.app = initializeApp({
         credential,
-      });
+        httpAgent: proxyAgent,
+      } as any);
       this.logger.log("FCM 初始化完成");
     } catch (err) {
       // 可能已存在默认 app，尝试复用

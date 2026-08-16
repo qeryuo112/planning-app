@@ -3021,23 +3021,46 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
    - Flutter：`apps/mobile/lib/services/sync_engine.dart` 增加 WebSocket 重连配置：启用 `enableReconnection`、初始重连延迟 1 秒、最大 5 秒、随机因子 0.5、连接超时 10 秒，提高实时推送稳定性。
    - 前端 `RemindersNotifier` 已监听 `reminder.triggered` 并通过 `NotificationService.showInstant` 弹本地通知；结合更短扫描间隔与更稳定的 WebSocket，提醒触达更实时。
 
-3. **FCM 代理支持**
-   - 文件：`services/api/src/modules/notifications/fcm.service.ts`、`services/api/.env.example`
-   - 新增 `GOOGLE_API_PROXY` 环境变量；服务初始化时若配置了代理，自动设置 `process.env.HTTPS_PROXY` / `process.env.HTTP_PROXY`，`google-auth-library` 会自动走代理访问 Google OAuth2 / FCM 发送端点。
-   - 未配置代理时保持现有行为，FCM 仍可能因国内网络受限而失败。
-   - 后端已保留 `FcmService.sendToUser` 调用点，`reminders.service.ts` 在 `channel === "push"` 时会调用 FCM 发送远程推送。
+3. **服务器代理与 FCM 真实推送验证（已落地）**
+
+   - **mihomo 代理部署**
+     - 路径：`/opt/mihomo`（v1.18.8）。
+     - 通过订阅链接转换脚本 `planning-app/scripts/convert_sub.py` 生成 Clash YAML，仅让 `google.com`、`googleapis.com` 等域名走代理，其余直连。
+     - 默认节点固定为 `德国法兰克福-rl(主力)`（VLESS Reality）。
+     - systemd 服务 `mihomo.service` 监听 `127.0.0.1:7890`。
+     - 验证：`curl -x http://127.0.0.1:7890 https://www.google.com` 返回 302；`curl -x ... https://fcm.googleapis.com/fcm/send` 返回 404，说明代理到 FCM 端点可达。
+
+   - **后端代码修正**
+     - 文件：`services/api/src/modules/notifications/fcm.service.ts`、`services/api/package.json`
+     - 原实现仅在 `FcmService` 中设置 `HTTPS_PROXY`/`HTTP_PROXY` 环境变量，但 `firebase-admin` 内置 HTTP 客户端不读取环境变量，导致真实 FCM 请求仍直连，出现 `app/network-timeout` / `Error while making request`。
+     - 修复：`import { HttpsProxyAgent } from "https-proxy-agent"`，在 `GOOGLE_API_PROXY` 存在时创建 `HttpsProxyAgent`，并同时传入：
+       - `cert(credential, proxyAgent)`：让 Google OAuth2 取 token 走代理；
+       - `initializeApp({ credential, httpAgent: proxyAgent })`：让 FCM `send()` 请求走代理。
+     - 环境变量仍保留，供 `googleapis`/`google-auth-library` 的 gaxios 使用。
+     - 新增依赖：`services/api/package.json` 加入 `https-proxy-agent: ^7.0.6`。
+
+   - **服务器端验证**
+     - `/opt/planning-app/.env`：`GOOGLE_API_PROXY=http://127.0.0.1:7890`。
+     - 重启 `planning-api.service` 后日志确认：`FcmService` 输出「已配置 Google API 代理: http://127.0.0.1:7890，并创建代理 Agent」和「FCM 初始化完成」。
+     - 使用测试账号 `planning-test@example.com` 创建任务 + `channel=push` 的提醒，`triggerAt` 设为 30 秒后到期。
+     - 15 秒扫描任务触发后，mihomo 日志出现：
+       ```
+       [TCP] 127.0.0.1:56218 --> fcm.googleapis.com:443 match DomainSuffix(googleapis.com) using PROXY[德国法兰克福-rl(主力)]
+       ```
+     - API 日志未出现 `FCM 推送失败`，说明服务端已真实把推送发送到 FCM HTTP v1 接口；若测试设备 token 有效，设备应收到通知。
 
 ### 部署
 
-- 后端：本地构建 `services/api` 后上传 `dist/` 到服务器，重启 `planning-api.service`。
+- 后端：本地构建 `services/api` 后上传 `dist/` 到服务器 `/opt/planning-app/services/api/dist/`，重启 `planning-api.service`。
+- 服务器：在 `/opt/planning-app/.env` 中填入 `GOOGLE_API_PROXY=http://127.0.0.1:7890`（或可用代理地址），并确保代理服务器已启动；重启后端服务即可。
 - 前端：构建 `plan-week33.apk`（或对应版本产物）。
-- 服务器：在 `/opt/planning-app/.env` 中填入 `GOOGLE_API_PROXY=http://your-proxy:port` 后重启服务，即可重新尝试 FCM 远程推送。
 
 ### 验证
 
 - `npm run build -w services/api`：通过 ✅
 - `npm run test -w services/api -- --testPathPattern=reminders`：通过 ✅
 - `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- 服务器端到端 FCM 代理连通性：通过 ✅
 
 ### 关键文件
 
@@ -3046,10 +3069,11 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - `apps/mobile/lib/services/sync_engine.dart`
 - `services/api/src/modules/reminders/reminders.scheduler.ts`
 - `services/api/src/modules/notifications/fcm.service.ts`
+- `services/api/package.json`
 - `services/api/.env.example`
 
 ### 遗留与后续
 
-- FCM 代理需要用户在服务器上真实配置可用代理后才能验证端到端推送；代码侧已就绪。
-- 若服务器无可用代理，个人版仍依赖本地通知 + WebSocket 实时提醒。
+- FCM 服务端推送已可走出服务器；真机是否收到依赖设备当前 token 是否有效。如未收到，请使用当前登录设备的 FCM token 替换测试账号 `fcmToken` 后重新验证。
+- 代理节点长期稳定性需观察；若后续失效，可替换订阅节点或改用其他代理。
 - 复盘历史目前仅在当前会话内存中保留，切换目标/退出后清空；如需跨会话保留，可在后续版本通过后端 `GET /ai/sessions/:id/messages` 接口读取持久化历史。

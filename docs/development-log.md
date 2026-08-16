@@ -2481,14 +2481,18 @@ Week 9 候选方向：
 - 已复制到：`planning-app/releases/planning-app-week28.apk`（第 2 版，覆盖第 1 版）
 - 构建时间：约 85 秒
 
-### 待真机验证
+### 真机复测（2026-08-16，vivo 真机，Week 28 v2 APK）
 
-- 安装新版 `planning-app-week28.apk` 后启动，确认不再白屏，可进入登录/今日页。
-- 确认日志中无 `FirebaseApp initialization unsuccessful`。
-- 确认 `GeneratedPluginRegistrant` 无 health 插件异常。
-- 观察 `ComponentDiscovery` 警告是否减少或消失。
-- 观察 `Invalid resource ID 0x00000001` 是否仍然出现。
-- 确认 `OnBackInvokedCallback` 警告已消失。
+- 日志文件：`env_planning_app_mobile_pid_new.log`（95 行，约 30 秒）
+- 启动结果：✅ **白屏消失，应用可进入 UI 并弹出软键盘**，用户能交互（输入法 onRequestShow/onShown）
+- 检查项：
+  - `FATAL EXCEPTION`：0 次 ✅
+  - `ComponentDiscovery: Could not instantiate`：未出现 ✅
+  - `FirebaseInitProvider: FirebaseApp initialization successful`：出现 ✅
+  - `HealthPlugin` / `ClassCastException`：未出现 ✅
+  - `OnBackInvokedCallback is not enabled`：未出现 ✅
+  - `Invalid resource ID 0x00000001`：未出现 ✅
+- 剩余待确认：长时间运行稳定性（建议再测 5~10 分钟）与 FCM Token 实际上传。
 
 ### 关键文件
 

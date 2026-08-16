@@ -882,7 +882,7 @@
   I FirebaseInitProvider: FirebaseApp initialization unsuccessful
   ```
 - **根因**：Android 工程未应用 `com.google.gms.google-services` 插件，缺少 `google-services.json`。
-- **状态**：已确认 / 待 Week 28 修复
+- **状态**：已修复 ✅
 
 ### BUG-002 [P1] HealthPlugin 注册失败（ClassCastException）
 
@@ -904,7 +904,7 @@
     at k2.l.onAttachedToActivity(...)
   ```
 - **根因**：`health` 插件与当前 Flutter 嵌入版本 / Activity 类型 / compileSdk 不兼容。
-- **状态**：已确认 / 待 Week 28 修复
+- **状态**：已修复 ✅
 
 ### BUG-003 [P2] Invalid resource ID 0x00000001
 
@@ -923,7 +923,7 @@
   E ning_app_mobile: Invalid resource ID 0x00000001.
   ```
 - **根因**：代码引用了未声明的 asset/drawable，或第三方库使用了无效默认资源句柄。
-- **状态**：已确认 / 待 Week 28 排查
+- **状态**：本次 30 秒真机日志未复现，继续长测观察
 
 ### BUG-004 [P2] 未启用 Android 13+ 预测性返回手势
 
@@ -967,7 +967,7 @@
 - **修复方向**：
   1. `FcmService.initialize()` 中将 `_uploadToken()` 改为 `Future.microtask` 后台执行。
   2. 新增 `proguard-rules.pro` 保留 `com.google.firebase.**` 类与构造器，并 `-dontwarn com.google.android.play.core.**`。
-- **状态**：已修复 / 待 APK 验证
+- **状态**：已修复 ✅（APK 验证通过，白屏消失）
 
 ---
 

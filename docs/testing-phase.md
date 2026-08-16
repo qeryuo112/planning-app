@@ -487,15 +487,16 @@ W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in th
    - 添加 `-keep class com.google.firebase.** { *; }` 等规则，避免 R8 误删 Firebase 组件注册器。
    - 在 `app/build.gradle.kts` 的 `release` 构建类型中启用 `isMinifyEnabled` 并引用 `proguard-rules.pro`。
 
-### 修复验证 Checklist（第 2 版 APK 已生成，待真机验证）
+### 修复验证 Checklist（第 2 版 APK 已真机验证）
 
-- [ ] 点击应用图标后正常进入登录/今日页，不再白屏。
-- [ ] 日志中无 `ComponentDiscovery: Could not instantiate` 警告。
-- [ ] `FirebaseApp initialization successful` 出现。
-- [ ] `HealthPlugin` 无 `ClassCastException`。
-- [ ] `OnBackInvokedCallback` 警告消失。
-- [ ] `Invalid resource ID 0x00000001` 未出现或偶发。
-- [ ] 运行 5~10 分钟无崩溃。
+- [x] 点击应用图标后正常进入登录/今日页，不再白屏。
+- [x] 日志中无 `ComponentDiscovery: Could not instantiate` 警告。
+- [x] `FirebaseApp initialization successful` 出现。
+- [x] `HealthPlugin` 无 `ClassCastException`。
+- [x] `OnBackInvokedCallback` 警告消失。
+- [x] `Invalid resource ID 0x00000001` 未出现（本次 30 秒日志）。
+- [ ] 运行 5~10 分钟无崩溃（建议继续长测）。
+- [ ] FCM Token 实际上传并收到远程推送（需登录后验证）。
 
 ### 当前构建产物
 

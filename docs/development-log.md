@@ -2433,7 +2433,52 @@ Week 9 候选方向：
 - 订阅弹窗使用 `WidgetsBindingObserver` 监听 `AppLifecycleState.resumed`，OAuth 授权返回后自动刷新，无需用户手动下拉。
 - 乐观更新失败回退需要在修改 state 前保存 `previous` 列表快照。
 
+---
+
+## Week 28：真机问题修复与推送闭环（2026-08-15 ~ 2026-08-16）
+
+### 目标
+
+修复 2026-08-15 Android 真机日志排查中发现的 P0/P1/P2 问题，完成 FCM 远程推送闭环，恢复 Health Connect 运动数据同步能力。
+
+### 已完成工作
+
+1. **Android 13+ 预测性返回手势**
+   - 在 `apps/mobile/android/app/src/main/AndroidManifest.xml` 的 `<application>` 标签添加 `android:enableOnBackInvokedCallback="true"`。
+   - 预期消除 `WindowOnBackDispatcher` 警告。
+
+2. **修复 HealthPlugin 注册失败**
+   - 将 `MainActivity.kt` 从 `FlutterActivity` 改为 `FlutterFragmentActivity`。
+   - 原因：`health` 等权限相关插件需要 FragmentActivity 支持。
+   - 预期消除 `GeneratedPluginRegistrant: Error registering plugin health, java.lang.ClassCastException`。
+
+3. **Firebase Android 工程配置**
+   - 在 `settings.gradle.kts` 中添加 `com.google.gms.google-services` 插件依赖。
+   - 在 `app/build.gradle.kts` 中应用 `com.google.gms.google-services` 插件。
+   - 用户已将 `google-services.json` 放到 `apps/mobile/android/app/google-services.json`。
+   - 在 `.gitignore` 中排除 `google-services.json`，避免公开仓库泄露 Firebase 配置。
+
+4. **文档与决策**
+   - 创建 `decisions/2026-08-15-Week28真机问题修复决策.md`，记录问题、修复方案与 `google-services.json` 获取步骤。
+   - 更新 `docs/testing-phase.md` 第 19 节、 `docs/testing-plan.md` 第 7 节、 `docs/项目阶段总结.md` 与 `docs/development-roadmap.md` Week 28 计划。
+
+### 待验证
+
+- 重新构建 APK 并在真机安装测试。
+- 确认日志中无 `FirebaseApp initialization unsuccessful`。
+- 确认 `GeneratedPluginRegistrant` 无 health 插件异常。
+- 观察 `Invalid resource ID 0x00000001` 是否仍然出现。
+
+### 关键文件
+
+- `apps/mobile/android/app/src/main/AndroidManifest.xml`
+- `apps/mobile/android/app/src/main/kotlin/com/example/planning_app_mobile/MainActivity.kt`
+- `apps/mobile/android/settings.gradle.kts`
+- `apps/mobile/android/app/build.gradle.kts`
+- `decisions/2026-08-15-Week28真机问题修复决策.md`
+
 ### 遗留与后续
-- 当前操作队列仍使用 30 秒轮询 + 即时 push；可在网络状态监听（`connectivity_plus`）中接入即时重试。
-- 操作失败事件流已暴露，后续可在收件箱/日历页监听并展示「离线待同步」提示或红色角标。
-- 服务器尚未部署 Week 27 改动，需按交接文档步骤执行。
+
+- 若本次构建后 `Invalid resource ID 0x00000001` 仍存在，将进一步排查 `pubspec.yaml` assets 与第三方库默认资源。
+- 需要真机重新抓取 10 分钟日志，验证修复效果。
+- 构建产物（Week 28 APK）将保存到 `planning-app/releases/planning-app-week28.apk`。

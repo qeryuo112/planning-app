@@ -39,8 +39,8 @@ apps/mobile/build/
 apps/mobile/ios/Pods/
 apps/mobile/android/.gradle/
 
-# Tools
-/tools/flutter/
+# Android Firebase config (sensitive / per-environment)
+apps/mobile/android/app/google-services.json
 
 # Release artifacts
 releases/

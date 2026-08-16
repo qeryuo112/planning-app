@@ -61,9 +61,18 @@ class SyncEngine {
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    await _connectSocket();
-    await _pullEvents();
-    await pushOperations();
+
+    // WebSocket 连接在后台进行，避免阻塞登录/启动流程
+    _connectSocket().timeout(const Duration(seconds: 10)).catchError((e, st) {
+      _logger.w('WebSocket 连接失败，将使用轮询同步', error: e, stackTrace: st);
+    });
+
+    await _pullEvents()
+        .timeout(const Duration(seconds: 10))
+        .catchError((e, st) => _logger.w('首次拉取同步事件失败', error: e, stackTrace: st));
+    await pushOperations()
+        .timeout(const Duration(seconds: 10))
+        .catchError((e, st) => _logger.w('首次推送操作队列失败', error: e, stackTrace: st));
     _startPolling();
   }
 

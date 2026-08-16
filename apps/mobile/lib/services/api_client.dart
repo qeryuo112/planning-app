@@ -37,7 +37,9 @@ class ApiClient {
   Future<dynamic> get(String path) async {
     final uri = Uri.parse('$baseUrl$path');
     _logger.d('GET $uri');
-    final response = await http.get(uri, headers: await _headers());
+    final response = await http
+        .get(uri, headers: await _headers())
+        .timeout(const Duration(seconds: 15));
     return _handleResponse(response);
   }
 
@@ -47,11 +49,13 @@ class ApiClient {
   }) async {
     final uri = Uri.parse('$baseUrl$path');
     _logger.d('POST $uri body=$body');
-    final response = await http.post(
-      uri,
-      headers: await _headers(),
-      body: body == null ? null : jsonEncode(body),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: await _headers(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
     return _handleResponse(response);
   }
 
@@ -61,18 +65,22 @@ class ApiClient {
   }) async {
     final uri = Uri.parse('$baseUrl$path');
     _logger.d('PATCH $uri body=$body');
-    final response = await http.patch(
-      uri,
-      headers: await _headers(),
-      body: body == null ? null : jsonEncode(body),
-    );
+    final response = await http
+        .patch(
+          uri,
+          headers: await _headers(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
     return _handleResponse(response);
   }
 
   Future<dynamic> delete(String path) async {
     final uri = Uri.parse('$baseUrl$path');
     _logger.d('DELETE $uri');
-    final response = await http.delete(uri, headers: await _headers());
+    final response = await http
+        .delete(uri, headers: await _headers())
+        .timeout(const Duration(seconds: 15));
     return _handleResponse(response);
   }
 

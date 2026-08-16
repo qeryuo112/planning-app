@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../services/analytics_service.dart';
 import '../services/api_client.dart';
 import '../services/fcm_service.dart';
@@ -34,6 +36,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
   final ApiClient _client;
   final SyncEngine _sync;
   final AnalyticsService _analytics;
+  final Logger _logger = Logger();
 
   AuthNotifier(this._client, this._sync, this._analytics) : super(const AsyncValue.data(null));
 
@@ -45,8 +48,17 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
         'password': password,
       });
       await _client.setToken(res['accessToken'] as String);
-      await _sync.initialize();
-      await FcmService().uploadToken();
+      // 同步与 FCM Token 上传在后台执行，不阻塞登录进入主界面
+      Future.microtask(() async {
+        await _sync
+            .initialize()
+            .timeout(const Duration(seconds: 15))
+            .catchError((e) => _logger.w('登录后同步初始化失败: $e'));
+        await FcmService()
+            .uploadToken()
+            .timeout(const Duration(seconds: 10))
+            .catchError((e) => _logger.w('登录后 FCM Token 上传失败: $e'));
+      });
       _analytics.trackEvent('user.logged_in', metadata: {'email': email});
       state = const AsyncValue.data(null);
     } catch (e, st) {
@@ -62,8 +74,17 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
         'password': password,
       });
       await _client.setToken(res['accessToken'] as String);
-      await _sync.initialize();
-      await FcmService().uploadToken();
+      // 同步与 FCM Token 上传在后台执行，不阻塞注册进入主界面
+      Future.microtask(() async {
+        await _sync
+            .initialize()
+            .timeout(const Duration(seconds: 15))
+            .catchError((e) => _logger.w('注册后同步初始化失败: $e'));
+        await FcmService()
+            .uploadToken()
+            .timeout(const Duration(seconds: 10))
+            .catchError((e) => _logger.w('注册后 FCM Token 上传失败: $e'));
+      });
       _analytics.trackEvent('user.registered', metadata: {'email': email});
       state = const AsyncValue.data(null);
     } catch (e, st) {

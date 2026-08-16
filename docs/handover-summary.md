@@ -384,6 +384,7 @@
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
   - **Week 31 遗留**：`ReviewScreen` 前端尚未提供追问入口；`AiPlanDraftScreen` 已支持多轮追问与会话历史展示。**（Week 32 已解决：ReviewScreen 已增加追问输入框）**
   - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；但国内服务器无法访问 Google OAuth2 服务，远程 FCM 推送发送失败，个人使用版暂不启用远程推送，本地通知可用。
+  - **登录与启动体验（已修复）**：原登录流程 `await _sync.initialize()` + `await FcmService().uploadToken()` 会阻塞 UI；无 VPN 时 WebSocket/API 无超时导致无限 loading。已通过 `ApiClient` 15 秒超时、同步后台化、新增 `SplashScreen` 自动校验 token 修复。详见 `development-log.md`「登录与启动体验修复」。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。
   - 踩坑：旧 `.env` 被删除后需从 `planning-app-backup/.env` 复制；`nest build` 仅生成 `.d.ts` 时需删除 `dist/` 与 `tsconfig.tsbuildinfo` 重编；`bcrypt` 需 `npm rebuild --build-from-source`。

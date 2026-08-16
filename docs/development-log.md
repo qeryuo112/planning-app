@@ -2944,3 +2944,53 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 
 - 当前自动刷新间隔为 30 秒，适合个人使用；如需更实时可缩短间隔或接入 WebSocket 推送。
 - 复盘追问历史没有展示，当前仅保留最新一次复盘结果。
+
+
+---
+
+## 登录与启动体验修复（2026-08-16）
+
+### 问题背景
+
+用户反馈两个体验问题：
+1. 登录时不挂 VPN 会一直卡住（登录按钮持续 loading）。
+2. 退出应用后再次进入需要重新登录。
+
+### 根因分析
+
+1. **登录卡住**：`AuthNotifier.login()` 在拿到 `accessToken` 后 `await _sync.initialize()` 与 `await FcmService().uploadToken()`，其中 `_sync.initialize()` 会立即连接 WebSocket (`wss://xutaostudy.xyz/sync`) 并拉取 `/sync/events`；无 VPN 时这些网络调用没有超时，导致登录流程无限阻塞。`ApiClient` 的 `http` 请求也没有设置超时。
+2. **重新登录**：`main.dart` 一直把 `home` 固定为 `LoginScreen`，应用启动时从未读取 `SharedPreferences` 中保存的 `jwt_token` 做自动校验。
+
+### 修复内容
+
+1. **`ApiClient` 增加 15 秒超时**：所有 `GET/POST/PATCH/DELETE` 请求统一加 `.timeout(const Duration(seconds: 15))`，避免任何接口无限等待。
+2. **`SyncEngine.initialize()` 非阻塞 + 超时**：WebSocket 连接改为后台执行不阻塞；首次拉取同步事件、推送操作队列都加 10 秒超时，失败仅记录日志，后续 30 秒轮询会继续尝试。
+3. **`AuthNotifier` 登录/注册后台化**：设置 token 后立即进入主界面，同步引擎与 FCM Token 上传通过 `Future.microtask` 后台执行并带 10/15 秒超时。
+4. **新增启动页 `SplashScreen`**：启动时初始化通知与 FCM，读取本地保存的 token，调用 `GET /users/me`（10 秒超时）校验 token；有效则进入 `MainScreen`，无效/超时则清空 token 进入 `LoginScreen`。
+5. **提取 `AppNavigator`**：把 `navigatorKey` 与 `navigateToTodayScreen` 移到 `services/app_navigator.dart`，供 `main.dart` 和 `SplashScreen` 共享，避免循环依赖。
+
+### 关键文件
+
+- `apps/mobile/lib/services/api_client.dart`
+- `apps/mobile/lib/services/sync_engine.dart`
+- `apps/mobile/lib/providers/auth_provider.dart`
+- `apps/mobile/lib/services/app_navigator.dart`（新增）
+- `apps/mobile/lib/screens/splash_screen.dart`（新增）
+- `apps/mobile/lib/main.dart`
+
+### 验证
+
+- `flutter analyze`（`apps/mobile`）：`No issues found!` ✅
+- 构建产物：`planning-app/releases/plan-login-fix.apk`（约 61.8 MB）。
+- 后端无需改动。
+
+### 使用说明
+
+- 无 VPN 时登录/启动不再无限卡住：请求 10~15 秒超时后会进入失败提示或自动降级到登录页。
+- 已登录用户在有网络的情况下，下次启动会自动进入主界面；无网络时校验超时后会进入登录页（需重新登录）。
+- 已登录状态下 FCM/同步失败不再影响主界面使用，会在后台重试。
+
+### 遗留与后续
+
+- 若需在无网络环境下也能进入主界面，需要本地离线身份校验策略（如仅校验 JWT 签名/过期时间，不强制联网），目前个人版以联网校验为准。
+- 服务端 FCM 推送仍受国内网络限制，个人版以本地通知为主。

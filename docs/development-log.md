@@ -2722,12 +2722,20 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - `/opt/planning-app/firebase-service-account.json`（服务器本地，未入 Git）
 - `/opt/planning-app/.env`（服务器本地，未入 Git）
 
+### 验证结果
+
+- 在 Android 真机登录测试账号后，`users.fcmToken` 成功写入数据库（长度 142）。
+- 创建到期提醒后，后端扫描器正常触发，`reminders.status` 从 `pending` 变为 `sent`。
+- 但 FCM 真实发送失败：`Credential implementation ... failed to fetch a valid Google OAuth2 access token`，`request to https://oauth2.googleapis.com/token failed`。
+- 失败原因：服务器及当前命令行环境均无法访问 Google OAuth2 服务（国内网络限制）。
+
 ### 遗留与后续
 
-- 需在 Android 真机登录测试账号（`planning-test@example.com` / `Test@123456`），确认 `users.fcmToken` 字段被写入。
-- 创建一条提醒并等待到期（或设置过去的 `triggerAt`），验证手机能收到 FCM 通知。
-- 若国内网络访问 Firebase 不稳定，可能需要进一步观察推送延迟与失败率。
-
+- **个人使用版暂不启用远程 FCM 推送**：本地通知已可用，打开 App 后 SyncEngine 会同步提醒事件。
+- 若后续需要远程推送，可选方案：
+  1. 在服务器配置代理/VPN 让 node 访问 Google。
+  2. 集成国内第三方推送服务（如极光推送、个推）。
+- 已增强 `FcmService` 错误日志，输出完整错误信息便于排查。
 
 ---
 

@@ -140,6 +140,7 @@
 - [x] **Week 26 新增**：Health Connect 同步失败 UI 回退（警告卡片 + 改用 JSON 导入）
 - [x] **Week 26 新增**：日历订阅弹窗下拉刷新
 - [x] **Week 27 新增**：FCM 真实推送后端（`fcm.service.ts`、`POST /users/me/fcm-token`）
+- [x] **Week 29 新增**：真机 FCM token 上传成功；远程 FCM 发送因国内网络限制（Google OAuth2 不可达）暂不可用，本地通知已可用
 - [x] **Week 27 新增**：服务端监控指标 `/metrics`（Prometheus 格式）
 - [x] **Week 27 新增**：`UserEvent` 行为埋点落库与客户端 `POST /analytics/events` 批量接口
 - [x] **Week 30 新增**：客户端 `AnalyticsService` 批量/失败缓存/生命周期 flush，覆盖登录、今日页、AI 草案页核心事件
@@ -376,7 +377,7 @@
   - **Week 15 遗留**：社交排行榜显示邮箱而非昵称/头像；共享目标未完整实现编辑权限；挑战与目标/习惯未强关联，按全局行为计分；无实时推送。
   - **Week 16 遗留**：未实现 Google/Outlook OAuth 完整功能，仅支持公开 ICS URL / ICS 文本粘贴；运动数据未接入真实设备 SDK；外部日历同步后端 cron 已存在，UI 同步状态提示待增强（Week 32）。
   - **Week 18 遗留**：profile-summary 依赖 strong 模型，成本较高；分析维度有限；未实现周期性自动刷新画像。**（Week 24 已解决：增加快照表与自动刷新 cron，默认读快照减少重复调用）**
-  - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，`users.fcmToken` 字段已就绪，待真机登录上传 token 后验证真实推送。
+  - **Week 27/29 FCM 状态**：后端 `FcmService` 已初始化完成，真机登录后 `users.fcmToken` 写入成功；但国内服务器无法访问 Google OAuth2 服务，远程 FCM 推送发送失败，个人使用版暂不启用远程推送，本地通知可用。
   - **Week 24 遗留**：SSE 客户端暂无自动重连与心跳；逐 token 流式输出待后续需要时再实现；模板推荐仍基于关键词硬匹配，可后续引入 embedding 语义匹配。
 - **Week 19 部署状态**：
   - 2026-08-13 18:35 部署完成。

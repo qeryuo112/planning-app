@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/analytics_service.dart';
 import '../services/api_client.dart';
+import '../services/fcm_service.dart';
 import '../services/local_database.dart';
 import '../services/sync_engine.dart';
 
@@ -45,6 +46,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
       });
       await _client.setToken(res['accessToken'] as String);
       await _sync.initialize();
+      await FcmService().uploadToken();
       _analytics.trackEvent('user.logged_in', metadata: {'email': email});
       state = const AsyncValue.data(null);
     } catch (e, st) {
@@ -61,6 +63,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
       });
       await _client.setToken(res['accessToken'] as String);
       await _sync.initialize();
+      await FcmService().uploadToken();
       _analytics.trackEvent('user.registered', metadata: {'email': email});
       state = const AsyncValue.data(null);
     } catch (e, st) {

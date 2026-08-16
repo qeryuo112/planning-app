@@ -50,23 +50,11 @@ class FcmService {
 
     // 获取并上传 FCM Token 可能依赖网络与 Firebase Installations，
     // 放在后台执行，避免阻塞应用启动导致白屏。
-    Future.microtask(() => _uploadToken());
+    Future.microtask(() => uploadToken());
   }
 
-  Future<void> _requestPermission() async {
-    if (Platform.isIOS) {
-      final messaging = _messaging;
-      if (messaging == null) return;
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      _logger.d('iOS 通知权限状态: ${settings.authorizationStatus}');
-    }
-  }
-
-  Future<void> _uploadToken() async {
+  /// 手动获取并上传当前 FCM Token。登录成功后应调用一次，确保后端保存最新 token。
+  Future<void> uploadToken() async {
     final messaging = _messaging;
     if (messaging == null) return;
     try {
@@ -80,6 +68,19 @@ class FcmService {
       _logger.d('FCM Token 已上传');
     } catch (e) {
       _logger.w('上传 FCM Token 失败: $e');
+    }
+  }
+
+  Future<void> _requestPermission() async {
+    if (Platform.isIOS) {
+      final messaging = _messaging;
+      if (messaging == null) return;
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      _logger.d('iOS 通知权限状态: ${settings.authorizationStatus}');
     }
   }
 

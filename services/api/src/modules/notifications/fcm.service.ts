@@ -97,8 +97,9 @@ export class FcmService {
       return true;
     } catch (err: any) {
       const code = err?.errorInfo?.code as string | undefined;
+      const message = err?.message ?? err?.toString?.() ?? "unknown";
       this.logger.warn(
-        `FCM 推送失败: user=${userId}, code=${code ?? "unknown"}`,
+        `FCM 推送失败: user=${userId}, code=${code ?? "unknown"}, message=${message}`,
       );
 
       // 令牌失效或注册令牌无效，清理用户 token

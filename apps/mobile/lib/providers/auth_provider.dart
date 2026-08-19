@@ -47,7 +47,10 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
         'email': email,
         'password': password,
       });
-      await _client.setToken(res['accessToken'] as String);
+      await _client.setTokens(
+        res['accessToken'] as String,
+        res['refreshToken'] as String,
+      );
       // 同步与 FCM Token 上传在后台执行，不阻塞登录进入主界面
       Future.microtask(() async {
         await _sync
@@ -73,7 +76,10 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
         'email': email,
         'password': password,
       });
-      await _client.setToken(res['accessToken'] as String);
+      await _client.setTokens(
+        res['accessToken'] as String,
+        res['refreshToken'] as String,
+      );
       // 同步与 FCM Token 上传在后台执行，不阻塞注册进入主界面
       Future.microtask(() async {
         await _sync

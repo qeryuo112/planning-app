@@ -37,14 +37,12 @@ export type StreamEvent<T> = StreamProgressEvent | StreamResultEvent<T>;
 
 /**
  * 模型适配层
- * 统一封装不同供应商的模型调用，提供 generateStructured 方法。
- * 支持 OpenAI 官方、DeepSeek、Claude 代理等任意 OpenAI 兼容接口。
+ * 统一封装不同供应商的模型调用，支持服务端环境变量配置或用户级自定义配置。
  */
 @Injectable()
 export class ModelAdapter {
   private readonly logger = new Logger(ModelAdapter.name);
-  private readonly openai: OpenAI | null = null;
-  private readonly config: ModelConfig;
+  private readonly fallbackConfig: ModelConfig;
 
   constructor(private readonly configService: ConfigService) {
     const provider = this.configService.get<string>("AI_PROVIDER", "openai");
@@ -52,7 +50,7 @@ export class ModelAdapter {
     const baseURL = this.configService.get<string>("OPENAI_BASE_URL");
     const model = this.configService.get<string>("OPENAI_MODEL", "gpt-4o-mini");
 
-    this.config = {
+    this.fallbackConfig = {
       provider,
       apiKey,
       baseURL,
@@ -60,25 +58,66 @@ export class ModelAdapter {
       enabled: !!apiKey && apiKey.length > 0 && !apiKey.startsWith("sk-xxx"),
     };
 
-    if (!this.config.enabled) {
+    if (!this.fallbackConfig.enabled) {
       this.logger.warn(
         `AI 模型未配置（OPENAI_API_KEY 为空或占位），将使用占位草案降级`,
       );
     } else {
-      this.openai = new OpenAI({
-        apiKey,
-        baseURL,
-        timeout: 60000,
-        maxRetries: 2,
-      });
       this.logger.debug(
         `模型适配层初始化完成，provider=${provider}, model=${model}, baseURL=${baseURL ?? "default"}`,
       );
     }
   }
 
+  /**
+   * 获取环境变量中的默认配置（用于日志/计费展示）。
+   */
   getConfig(modelName?: string): ModelConfig {
-    return { ...this.config, model: modelName ?? this.config.model };
+    return { ...this.fallbackConfig, model: modelName ?? this.fallbackConfig.model };
+  }
+
+  /**
+   * 根据用户数据库存储的字段构建 ModelConfig。
+   */
+  getConfigFromUserFields(fields: {
+    aiProvider?: string | null;
+    aiModel?: string | null;
+    aiBaseUrl?: string | null;
+    aiApiKey?: string | null;
+  }, modelName?: string): ModelConfig {
+    const input: ModelConfig | undefined = fields.aiApiKey
+      ? {
+          provider: fields.aiProvider ?? this.fallbackConfig.provider,
+          apiKey: fields.aiApiKey,
+          baseURL: fields.aiBaseUrl ?? this.fallbackConfig.baseURL,
+          model: fields.aiModel ?? this.fallbackConfig.model,
+          enabled: true,
+        }
+      : undefined;
+    return this.resolveConfig(input);
+  }
+
+  private resolveConfig(input?: ModelConfig): ModelConfig {
+    if (!input) return this.fallbackConfig;
+    const apiKey = input.apiKey?.trim();
+    const enabled = !!apiKey && apiKey.length > 0 && !apiKey.startsWith("sk-xxx");
+    return {
+      provider: input.provider?.trim() || this.fallbackConfig.provider,
+      apiKey: apiKey || this.fallbackConfig.apiKey,
+      baseURL: input.baseURL?.trim() || this.fallbackConfig.baseURL,
+      model: input.model?.trim() || this.fallbackConfig.model,
+      enabled: enabled || this.fallbackConfig.enabled,
+    };
+  }
+
+  private createClient(config: ModelConfig): OpenAI | null {
+    if (!config.enabled) return null;
+    return new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseURL,
+      timeout: 60000,
+      maxRetries: 2,
+    });
   }
 
   async generateStructured<T>(
@@ -87,22 +126,26 @@ export class ModelAdapter {
     options: {
       modelName?: string;
       history?: ChatCompletionMessageParam[];
+      config?: ModelConfig;
     } = {},
   ): Promise<StructuredResponse<T>> {
-    if (!this.openai) {
+    const config = this.resolveConfig(options.config);
+    const model = options.modelName?.trim() || config.model;
+    const client = this.createClient(config);
+
+    if (!client) {
       return {
         data: null,
         raw: "",
-        model: options.modelName ?? this.config.model,
+        model,
         error: "AI 模型未配置",
       };
     }
 
-    const model = options.modelName ?? this.config.model;
     const start = Date.now();
     try {
       this.logger.debug(
-        `调用模型生成结构化输出，provider=${this.config.provider}, model=${model}, prompt 长度: ${prompt.length}`,
+        `调用模型生成结构化输出，provider=${config.provider}, model=${model}, baseURL=${config.baseURL ?? "default"}, prompt 长度: ${prompt.length}`,
       );
 
       const messages: ChatCompletionMessageParam[] = [
@@ -118,7 +161,7 @@ export class ModelAdapter {
 
       messages.push({ role: "user", content: prompt });
 
-      const completion = await this.openai.chat.completions.create({
+      const completion = await client.chat.completions.create({
         model,
         messages,
         response_format: { type: "json_object" },
@@ -167,8 +210,6 @@ export class ModelAdapter {
   /**
    * 流式生成结构化输出。
    * 通过 AsyncGenerator 在模型调用前后发送 progress 事件，最终结果以 result 事件返回。
-   * 注意：当前实现仍在服务端等待完整响应后再返回结果，因此适合"阶段进度"展示，
-   * 而非逐 token 打字机效果。
    */
   async *streamProgress<T>(
     prompt: string,
@@ -176,17 +217,22 @@ export class ModelAdapter {
     options: {
       modelName?: string;
       history?: ChatCompletionMessageParam[];
+      config?: ModelConfig;
     } = {},
   ): AsyncGenerator<StreamEvent<T>> {
     yield { type: "progress", stage: "preparing" };
 
-    if (!this.openai) {
+    const config = this.resolveConfig(options.config);
+    const model = options.modelName?.trim() || config.model;
+    const client = this.createClient(config);
+
+    if (!client) {
       yield {
         type: "result",
         response: {
           data: null,
           raw: "",
-          model: options.modelName ?? this.config.model,
+          model,
           error: "AI 模型未配置",
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         },

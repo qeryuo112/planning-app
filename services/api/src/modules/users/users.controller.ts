@@ -11,6 +11,7 @@ import {
 } from "../../common/decorators/current-user.decorator";
 import { UsersService } from "./users.service";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
+import { UpdateAiConfigDto } from "./dto/update-ai-config.dto";
 import { UpdateFcmTokenDto } from "./dto/update-fcm-token.dto";
 
 @Controller("users")
@@ -39,5 +40,18 @@ export class UsersController {
       return this.usersService.clearFcmToken(user.userId);
     }
     return this.usersService.updateFcmToken(user.userId, dto.token.trim());
+  }
+
+  @Get("me/ai-config")
+  getAiConfig(@CurrentUser() user: CurrentUserPayload) {
+    return this.usersService.getAiConfig(user.userId);
+  }
+
+  @Patch("me/ai-config")
+  updateAiConfig(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: UpdateAiConfigDto,
+  ) {
+    return this.usersService.updateAiConfig(user.userId, dto);
   }
 }

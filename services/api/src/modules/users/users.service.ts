@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
+import { UpdateAiConfigDto } from "./dto/update-ai-config.dto";
 
 const DEFAULT_PREFERENCES = {
   timezone: "Asia/Shanghai",
@@ -50,6 +51,64 @@ export class UsersService {
       notificationSetting:
         (user.notificationSetting as Record<string, unknown>) ??
         DEFAULT_PREFERENCES.notificationSetting,
+    };
+  }
+
+  private maskApiKey(key?: string | null): string | null {
+    if (!key) return null;
+    if (key.length <= 8) return "***";
+    return `${key.slice(0, 4)}...${key.slice(-4)}`;
+  }
+
+  async getAiConfig(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        aiProvider: true,
+        aiModel: true,
+        aiBaseUrl: true,
+        aiApiKey: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException("用户不存在");
+    }
+
+    return {
+      aiProvider: user.aiProvider,
+      aiModel: user.aiModel,
+      aiBaseUrl: user.aiBaseUrl,
+      aiApiKey: this.maskApiKey(user.aiApiKey),
+    };
+  }
+
+  async updateAiConfig(userId: string, dto: UpdateAiConfigDto) {
+    const data: Record<string, unknown> = {};
+
+    if (dto.aiProvider !== undefined) data.aiProvider = dto.aiProvider;
+    if (dto.aiModel !== undefined) data.aiModel = dto.aiModel;
+    if (dto.aiBaseUrl !== undefined) data.aiBaseUrl = dto.aiBaseUrl;
+    if (dto.aiApiKey !== undefined) data.aiApiKey = dto.aiApiKey;
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        aiProvider: true,
+        aiModel: true,
+        aiBaseUrl: true,
+        aiApiKey: true,
+      },
+    });
+
+    return {
+      userId: user.id,
+      aiProvider: user.aiProvider,
+      aiModel: user.aiModel,
+      aiBaseUrl: user.aiBaseUrl,
+      aiApiKey: this.maskApiKey(user.aiApiKey),
     };
   }
 

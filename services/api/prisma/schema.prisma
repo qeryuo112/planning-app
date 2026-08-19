@@ -17,6 +17,10 @@ model User {
   energyCurve         Json     @default("{}")
   notificationSetting Json     @default("{}")
   fcmToken            String?
+  aiProvider          String?
+  aiModel             String?
+  aiBaseUrl           String?
+  aiApiKey            String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

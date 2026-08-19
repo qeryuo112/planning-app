@@ -2,6 +2,7 @@ import { Controller, Delete, Get, Post, Body, Param, Sse, Query } from "@nestjs/
 import { AiService } from "./ai.service";
 import { AiInsightsService } from "./ai-insights.service";
 import { CreatePlanDraftDto } from "./dto/create-plan-draft.dto";
+import { ImportPlanFileDto } from "./dto/import-plan-file.dto";
 import { ApprovePlanDto } from "./dto/approve-plan.dto";
 import { ReplanDto } from "./dto/replan.dto";
 import { ReviewDto } from "./dto/review.dto";
@@ -36,6 +37,14 @@ export class AiController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.aiService.createStreamDraft(user.userId, dto);
+  }
+
+  @Post("plan-drafts/from-file")
+  importPlanFromFile(
+    @Body() dto: ImportPlanFileDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.aiService.createDraftFromFile(user.userId, dto);
   }
 
   @Get("plan-drafts/:id")

@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Observable, Subscriber } from "rxjs";
 import { PrismaClient } from "@prisma/client";
-import { ModelAdapter } from "./model-adapter.service";
+import { ModelAdapter, ModelConfig } from "./model-adapter.service";
 import {
   PlanOrchestrator,
   PlanDraftPayload,
@@ -31,6 +31,23 @@ import {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly promptVersion = "placeholder-v1";
+
+  /**
+   * 获取用户的 AI 模型配置。若用户未配置，则回退到服务端环境变量。
+   */
+  private async getUserModelConfig(userId: string): Promise<ModelConfig> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        aiProvider: true,
+        aiModel: true,
+        aiBaseUrl: true,
+        aiApiKey: true,
+      },
+    });
+
+    return this.modelAdapter.getConfigFromUserFields(user ?? {}, user?.aiModel ?? undefined);
+  }
 
   constructor(
     private readonly configService: ConfigService,
@@ -67,8 +84,8 @@ export class AiService {
       ? findTemplateById(dto.templateId)
       : await this.recommendTemplateWithHistory(userId, dto.userInput);
 
-    const model = this.resolveModel("cheap");
-    const config = this.modelAdapter.getConfig(model);
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("cheap", config);
 
     const constraints = {
       planDuration: dto.planDuration,
@@ -144,6 +161,7 @@ export class AiService {
         template,
         model,
         history,
+        config,
       );
       latency = Date.now() - start;
       if (generation.fallback) {
@@ -275,6 +293,158 @@ export class AiService {
       overload,
       availableWeeklyMinutes,
       sessionId: session.id,
+    };
+  }
+
+  /**
+   * 从上传的计划文件内容创建计划草案。
+   * scope=master：生成总/月目标、里程碑、习惯。
+   * scope=weekly：基于 parentGoalId 关联的已有目标，生成带日期的任务。
+   */
+  async createDraftFromFile(userId: string, dto: {
+    content: string;
+    fileName?: string;
+    scope: "master" | "weekly";
+    parentGoalId?: string;
+    requirements?: string;
+    planDuration?: number;
+    stageLength?: number;
+  }) {
+    this.logger.debug(
+      `创建文件导入计划草案，scope: ${dto.scope}, parentGoalId: ${dto.parentGoalId ?? "无"}, user=${userId}`,
+    );
+
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("cheap", config);
+
+    const constraints: Record<string, unknown> = {
+      planDuration: dto.planDuration ?? 30,
+      stageLength: dto.stageLength ?? 7,
+      currentStage: 1,
+    };
+    if (dto.requirements) {
+      constraints["requirements"] = dto.requirements;
+    }
+
+    let parentGoalTitle: string | undefined;
+    if (dto.parentGoalId) {
+      const parentGoal = await this.prisma.goal.findFirst({
+        where: { id: dto.parentGoalId, userId },
+        select: { title: true },
+      });
+      if (!parentGoal) {
+        throw new NotFoundException("关联目标不存在");
+      }
+      parentGoalTitle = parentGoal.title;
+    }
+
+    const costCheck = await this.checkDailyCostLimit(userId, model);
+    let generation: {
+      draft: any;
+      fallback: boolean;
+      error?: string;
+      usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+      };
+    };
+    let latency = 0;
+
+    if (costCheck.exceeded) {
+      const fallbackReason = `日费用上限已触发（当前 $${costCheck.current.toFixed(4)} / $${costCheck.limit.toFixed(2)} USD），已降级为占位草案`;
+      this.logger.warn(fallbackReason);
+      generation = {
+        draft: this.orchestrator.buildFallbackDraft(
+          dto.content.slice(0, 50),
+          constraints,
+        ),
+        fallback: true,
+        error: fallbackReason,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    } else {
+      const start = Date.now();
+      generation = await this.orchestrator.generateDraftFromFile(
+        dto.content,
+        constraints,
+        dto.scope,
+        parentGoalTitle,
+        model,
+        config,
+      );
+      latency = Date.now() - start;
+    }
+
+    const payload = generation.draft;
+    const fallbackReason = generation.fallback
+      ? (generation.error ?? "模型生成失败或校验不通过，已降级到占位草案")
+      : null;
+
+    const planVersion = await this.prisma.planVersion.create({
+      data: {
+        goalId: dto.parentGoalId ?? null,
+        versionNo: 1,
+        source: generation.fallback ? "fallback" : "ai-file",
+        planDuration: payload.planDuration ?? null,
+        stageLength: payload.stageLength ?? null,
+        currentStage: payload.currentStage ?? null,
+        totalStages: payload.totalStages ?? null,
+        payload: payload as any,
+        userFeedback: {
+          scope: dto.scope,
+          fileName: dto.fileName,
+          requirements: dto.requirements,
+          fallbackReason,
+        } as any,
+      },
+    });
+
+    const actualCost = this.estimateCost(
+      config.model,
+      generation.usage?.promptTokens ?? 0,
+      generation.usage?.completionTokens ?? 0,
+    );
+
+    await this.prisma.aIOperation.create({
+      data: {
+        userId,
+        sessionId: null,
+        model: config.model,
+        promptVersion: this.promptVersion,
+        inputTokens: generation.usage?.promptTokens ?? 0,
+        outputTokens: generation.usage?.completionTokens ?? 0,
+        latencyMs: latency,
+        cost: actualCost,
+        result: {
+          draftId: planVersion.id,
+          source: generation.fallback ? "fallback" : "ai-file",
+          error: generation.error ?? undefined,
+          dailyCostAtCall: Number(
+            (costCheck.current + (actualCost ?? 0)).toFixed(6),
+          ),
+        } as any,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.file_imported",
+      targetId: planVersion.id,
+      metadata: {
+        fallback: !!fallbackReason,
+        scope: dto.scope,
+        model: config.model,
+        fileName: dto.fileName,
+      },
+    });
+
+    return {
+      draftId: planVersion.id,
+      status: "draft",
+      plan: payload,
+      fallback: !!fallbackReason,
+      error: fallbackReason ?? undefined,
     };
   }
 
@@ -545,8 +715,8 @@ export class AiService {
       userPreferences,
     };
 
-    const model = this.resolveModel("cheap");
-    const config = this.modelAdapter.getConfig(model);
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("cheap", config);
     const costCheck = await this.checkDailyCostLimit(userId, model);
 
     let payload: PlanDraftPayload;
@@ -579,6 +749,7 @@ export class AiService {
         constraints,
         template,
         model,
+        config,
       )) {
         if (subscriber.closed) return;
 
@@ -908,8 +1079,8 @@ export class AiService {
       currentStage: nextStage,
     };
 
-    const model = this.resolveModel("cheap");
-    const config = this.modelAdapter.getConfig(model);
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("cheap", config);
     const costCheck = await this.checkDailyCostLimit(userId, model);
 
     let generation: {
@@ -943,6 +1114,7 @@ export class AiService {
         previousPayload,
         constraints,
         model,
+        config,
       );
       latency = Date.now() - start;
     }
@@ -1076,8 +1248,8 @@ export class AiService {
     const recentMessages = await this.aiSession.getMessages(session.id, 20);
     const history = this.aiSession.toChatMessages(recentMessages);
 
-    const model = this.resolveModel("strong");
-    const config = this.modelAdapter.getConfig(model);
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("strong", config);
     const costCheck = await this.checkDailyCostLimit(userId, model);
 
     let generation: {
@@ -1110,6 +1282,7 @@ export class AiService {
         constraints,
         model,
         history,
+        config,
       );
       latency = Date.now() - start;
     }
@@ -1282,8 +1455,8 @@ export class AiService {
     const recentMessages = await this.aiSession.getMessages(session.id, 20);
     const history = this.aiSession.toChatMessages(recentMessages);
 
-    const model = this.resolveModel("strong");
-    const config = this.modelAdapter.getConfig(model);
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("strong", config);
     const costCheck = await this.checkDailyCostLimit(userId, model);
 
     let generation: {
@@ -1315,6 +1488,7 @@ export class AiService {
         reviewContext,
         model,
         history,
+        config,
       );
       latency = Date.now() - start;
     }
@@ -1486,7 +1660,8 @@ export class AiService {
     };
   }
 
-  private resolveModel(type: "cheap" | "strong"): string {
+  private resolveModel(type: "cheap" | "strong", config?: ModelConfig): string {
+    if (config?.model) return config.model;
     const defaultModel = this.modelAdapter.getConfig().model;
     const envKey = type === "cheap" ? "AI_CHEAP_MODEL" : "AI_STRONG_MODEL";
     const configured = this.configService.get<string>(envKey);

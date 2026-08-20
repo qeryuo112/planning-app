@@ -115,7 +115,7 @@
 |------|------|------|
 | POST | `/ai/plan-drafts` | 创建计划草案，可指定 `templateId` 使用预置模板；优先调用真实 LLM，失败/超限降级为模板或占位草案 |
 | POST | `/ai/plan-drafts/from-file` | 上传计划文件内容（JSON body 传 `content`），AI 解析后生成草案 |
-| POST | `/ai/plan-drafts/from-upload` | **推荐**：以 `multipart/form-data` 上传计划文件，由服务端读取文件内容后交给 AI 解析 |
+| POST | `/ai/plan-drafts/from-upload` | **推荐**：以 `multipart/form-data` 上传任意文件，服务端先上传到 OSS，再按文件类型转为 AI content blocks（文本 / 图片 / 视频 / PDF 页 / PPTX 文本），由 AI 直接解析 |
 | GET | `/ai/plan-drafts/:id` | 获取已保存的草案 |
 | GET | `/ai/plan-drafts/:id/stream` | 流式草案推送（占位） |
 | POST | `/ai/plan-drafts/:id/approve` | 确认草案，事务落库，可选 feedback |
@@ -139,11 +139,22 @@ curl -X POST https://xutaostudy.xyz/api/v1/ai/plan-drafts/from-upload \
 ```
 
 字段说明：
-- `file`：文件内容（支持 txt / md / json）。
+- `file`：文件内容（支持 txt / md / json / 图片 / 视频 / PDF / PPTX 等）。
 - `scope`：`master` | `weekly`。
 - `parentGoalId`：`weekly` 模式下必须关联已有目标。
 - `requirements`：可选，补充要求。
 - `planDuration` / `stageLength`：可选，默认 `30` / `7`。
+
+处理流程：
+1. 服务端接收 multipart 文件后，上传到阿里云 OSS 获取公网 URL。
+2. 根据文件扩展名下载并转换为 OpenAI 兼容的 content blocks：
+   - txt / md / json 等文本 → `text`
+   - png / jpg / gif / webp → `image_url`
+   - mp4 / mov / avi / mkv / webm → `video_url`
+   - pdf → PyMuPDF 逐页转 PNG → `image_url`
+   - pptx → python-pptx 提取每页文本 → `text`
+3. 将 content blocks 与解析要求一起发给 AI，让 AI 直接读取文件内容并输出计划草案。
+4. OSS 中的文件保留，便于后续追溯或重新解析。
 
 #### 方式 2：JSON body 传 content
 

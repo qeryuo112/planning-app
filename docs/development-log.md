@@ -3155,6 +3155,7 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - [x] `PlanOrchestrator.generateDraftFromFile`：根据 scope 组装不同 prompt，输出标准 `PlanDraftPayload`。
 - [x] 落库 `PlanVersion.source = 'ai-file'`，并记录 `AIOperation`。
 - [x] **服务端文件解析**：新增 `POST /ai/plan-drafts/from-upload`，移动端通过 `multipart/form-data` 上传文件，服务端读取文件内容后交给 AI 解析，本地不再把文件内容转成字符串。
+- [x] **OSS + 文档处理服务**：参考 kimiokc，文件上传到阿里云 OSS 后，服务端按文件类型转为 AI content blocks（txt/md/json 文本、图片 image_url、视频 video_url、PDF 转 PNG、PPTX 提取文本），由 AI 直接解析文件内容。
 
 ### Flutter 任务
 
@@ -3219,6 +3220,7 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - Flutter：`flutter analyze --no-pub` 无 issues。
 - APK：`flutter build apk --release` 成功，产物 `releases/plan-week34-ai-import.apk`（62.1MB）。
 - EXE：`flutter build windows --release` 成功，产物 `releases/plan-week34-ai-import.exe`（767KB）。
+- **新增依赖部署**：`@aws-sdk/client-s3`、`axios` 已加入 `services/api/package.json`；部署到服务器时需同步上传 `package.json` 与根目录 `package-lock.json` 并执行 `npm install`，否则启动会报 `Cannot find module 'axios'`。
 
 ### 验证结果
 

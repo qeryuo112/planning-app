@@ -174,6 +174,39 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     }
   }
 
+  /// 上传文件到服务端解析，服务端读取文件内容后调用 AI 生成计划草案。
+  Future<Map<String, dynamic>?> uploadAndImportFile(
+    List<int> fileBytes, {
+    required String fileName,
+    required String scope,
+    String? parentGoalId,
+    String? requirements,
+    int planDuration = 30,
+    int stageLength = 7,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final res = await _client.uploadFile(
+        '/ai/plan-drafts/from-upload',
+        fileBytes: fileBytes,
+        fieldName: 'file',
+        fileName: fileName,
+        fields: {
+          'scope': scope,
+          if (parentGoalId != null) 'parentGoalId': parentGoalId,
+          if (requirements != null) 'requirements': requirements,
+          'planDuration': planDuration.toString(),
+          'stageLength': stageLength.toString(),
+        },
+      );
+      state = AsyncValue.data(res);
+      return res;
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> approveDraft(String draftId, {String? feedback}) async {
     try {
       final res = await _client.post('/ai/plan-drafts/$draftId/approve', body: {

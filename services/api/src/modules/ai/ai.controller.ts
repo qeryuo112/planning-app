@@ -1,8 +1,23 @@
-import { Controller, Delete, Get, Post, Body, Param, Sse, Query } from "@nestjs/common";
+import {
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Body,
+  Param,
+  Sse,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Express } from "express";
 import { AiService } from "./ai.service";
 import { AiInsightsService } from "./ai-insights.service";
 import { CreatePlanDraftDto } from "./dto/create-plan-draft.dto";
 import { ImportPlanFileDto } from "./dto/import-plan-file.dto";
+import { ImportPlanFileUploadDto } from "./dto/import-plan-file-upload.dto";
 import { ApprovePlanDto } from "./dto/approve-plan.dto";
 import { ReplanDto } from "./dto/replan.dto";
 import { ReviewDto } from "./dto/review.dto";
@@ -45,6 +60,28 @@ export class AiController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.aiService.createDraftFromFile(user.userId, dto);
+  }
+
+  @Post("plan-drafts/from-upload")
+  @UseInterceptors(FileInterceptor("file"))
+  importPlanFromUpload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportPlanFileUploadDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    if (!file) {
+      throw new BadRequestException("请上传文件");
+    }
+    const content = file.buffer.toString("utf-8");
+    return this.aiService.createDraftFromFile(user.userId, {
+      content,
+      fileName: file.originalname,
+      scope: dto.scope,
+      parentGoalId: dto.parentGoalId,
+      requirements: dto.requirements,
+      planDuration: dto.planDuration,
+      stageLength: dto.stageLength,
+    });
   }
 
   @Get("plan-drafts/:id")

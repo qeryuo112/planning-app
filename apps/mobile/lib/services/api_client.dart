@@ -51,6 +51,13 @@ class ApiClient {
     };
   }
 
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await getToken();
+    return {
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<dynamic> get(String path) async {
     return _requestWithRetry((headers) async {
       final uri = Uri.parse('$baseUrl$path');
@@ -107,6 +114,47 @@ class ApiClient {
           .timeout(const Duration(seconds: 15));
       return response;
     });
+  }
+
+  /// 上传文件（multipart/form-data）。
+  /// [fieldName] 为后端接收的字段名，[fileName] 为原始文件名。
+  Future<dynamic> uploadFile(
+    String path, {
+    required List<int> fileBytes,
+    required String fieldName,
+    required String fileName,
+    Map<String, String>? fields,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path');
+    _logger.d('UPLOAD $uri file=$fileName fields=$fields');
+
+    Future<http.StreamedResponse> doRequest(Map<String, String> headers) async {
+      final request = http.MultipartRequest('POST', uri);
+      request.headers.addAll(headers);
+      request.files.add(http.MultipartFile.fromBytes(
+        fieldName,
+        fileBytes,
+        filename: fileName,
+      ));
+      if (fields != null) {
+        request.fields.addAll(fields);
+      }
+      return request.send().timeout(const Duration(seconds: 60));
+    }
+
+    final headers = await _authHeaders();
+    var streamedResponse = await doRequest(headers);
+
+    if (streamedResponse.statusCode == 401) {
+      final refreshed = await _tryRefreshToken();
+      if (refreshed) {
+        final newHeaders = await _authHeaders();
+        streamedResponse = await doRequest(newHeaders);
+      }
+    }
+
+    final response = await http.Response.fromStream(streamedResponse);
+    return _handleResponse(response);
   }
 
   /// 上报单条客户端埋点事件。

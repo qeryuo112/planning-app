@@ -14,7 +14,7 @@ class AiPlanImportScreen extends ConsumerStatefulWidget {
 class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
   String _scope = 'master';
   String? _fileName;
-  String? _fileContent;
+  List<int>? _fileBytes;
   String? _selectedGoalId;
   final _requirementsController = TextEditingController();
   final _planDurationController = TextEditingController(text: '30');
@@ -51,12 +51,12 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
 
     setState(() {
       _fileName = file.name;
-      _fileContent = String.fromCharCodes(bytes);
+      _fileBytes = bytes;
     });
   }
 
   Future<void> _import() async {
-    if (_fileContent == null || _fileContent!.trim().isEmpty) {
+    if (_fileBytes == null || _fileBytes!.isEmpty) {
       _showSnack('请先选择文件');
       return;
     }
@@ -66,12 +66,12 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
     }
 
     setState(() => _importing = true);
-    final res = await ref.read(aiDraftProvider.notifier).importFromFile(
-      _fileContent!,
+    final res = await ref.read(aiDraftProvider.notifier).uploadAndImportFile(
+      _fileBytes!,
+      fileName: _fileName ?? 'plan.txt',
       scope: _scope,
       parentGoalId: _scope == 'weekly' ? _selectedGoalId : null,
       requirements: _requirementsController.text.trim().isEmpty ? null : _requirementsController.text.trim(),
-      fileName: _fileName,
       planDuration: int.tryParse(_planDurationController.text) ?? 30,
       stageLength: int.tryParse(_stageLengthController.text) ?? 7,
     );
@@ -124,6 +124,13 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
               icon: const Icon(Icons.upload_file),
               label: Text(_fileName ?? '选择 .txt / .md / .json'),
             ),
+            if (_fileName != null && _fileBytes != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '已选择：$_fileName（${_fileBytes!.length} 字节），将由服务端读取并解析',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 24),
             Text(
               '导入层级',

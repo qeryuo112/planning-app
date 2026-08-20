@@ -3163,11 +3163,11 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
   - 输入 Provider、Model、Base URL、API Key。
   - 保存后调用 `PATCH /users/me/ai-config`。
 - [x] 新增 `AiPlanImportScreen`（计划文件导入页）：
-  - 使用 `file_picker` 选择 txt/md/json。
+  - 使用 `file_picker` 选择文件（不限制扩展名）。
   - 选择 `scope`（总计划 / 周计划）。
   - 周计划模式下从已有目标下拉选择 `parentGoalId`。
   - 展示 AI 生成的草案，支持确认落库。
-  - **改为 multipart 上传文件到服务端，由服务端读取并解析，本地不处理文件内容**。
+  - **改为文件路径流式上传到服务端，本地不读取文件内容**。
 - [x] `MoreScreen` 增加「AI 设置」与「计划文件导入」入口。
 - [x] `ai_config_provider.dart` / `ai_provider.dart` 补充对应方法。
 

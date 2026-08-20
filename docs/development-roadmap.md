@@ -16,7 +16,7 @@
 
 ---
 
-## 1. 当前基线（Week 28 结束 / 2026-08-16）
+## 1. 当前基线（Week 34 结束 / 2026-08-20）
 
 ### 1.1 已完成
 
@@ -29,9 +29,11 @@
 - **数据报表**：执行报表（周/月/年）、能量曲线分析、最佳完成时段、Redis 缓存。
 - **高级 AI**：基于长期行为的用户画像摘要与个性化计划建议；SSE 流式计划生成、画像快照自动刷新、历史权重模板推荐。
 - **Flutter**：今日/目标/任务/习惯/AI 计划/复盘/更多/社交/日历/报表/AI 洞察/设置 页面、本地通知、FCM 客户端初始化、Riverpod、API 客户端、本地 SQLite、同步引擎、SSE 客户端已接入，`flutter analyze` 通过；已完成 Android 真机体验修复与 UI 美化。
+- **AI 自定义**：每个用户可独立设置 `aiProvider / aiModel / aiBaseUrl / aiApiKey`，不设置则回退服务端默认。
+- **计划文件导入**：支持上传 txt/md/json 文件，AI 分层解析；`scope=master` 生成总目标/里程碑/习惯，`scope=weekly` 基于已有目标生成带 `scheduledDate` 的具体任务。
 - **部署**：服务器 `xutaostudy.xyz` 使用 systemd 运行 `planning-api`，Nginx 反向代理 HTTPS，`/api/v1` 与 `/sync` 转发到 3001，数据库每日自动备份。
-- **验证**：后端 build/lint/test 全绿；Flutter analyze 无 issues；Android 真机测试核心流程无崩溃、无白屏，用户确认「现在没有什么问题了」。
-- **历史 Week 记录**：Week 0-28 详见 `planning-app/docs/development-log.md`。
+- **验证**：后端 build/lint/test 全绿；Flutter analyze 无 issues；Android 真机测试核心流程无崩溃、无白屏。
+- **历史 Week 记录**：Week 0-34 详见 `planning-app/docs/development-log.md`。
 
 ### 1.2 关键环境信息
 
@@ -703,7 +705,59 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 
 ---
 
-## 18. 未来更新计划（Week 29+）
+## 18. Week 34：AI API 自定义与计划文件导入（2026-08-20）
+
+### 目标
+
+1. 支持用户自定义 AI Provider、模型、Base URL、API Key。
+2. 支持上传 txt/md/json 计划文件，AI 自动解析并生成 App 数据（目标、里程碑、习惯、任务）。
+3. 支持“总计划 → 周计划”两层导入：总计划生成骨架目标，周计划基于已有目标生成具体日任务。
+
+### 后端任务
+
+- [x] User 表新增 `aiProvider`、`aiModel`、`aiBaseUrl`、`aiApiKey` 四个字段。
+- [x] 新增 `GET /users/me/ai-config` 与 `PATCH /users/me/ai-config`。
+- [x] `ModelAdapter` 支持 `getConfigFromUserFields`，按用户配置创建 OpenAI 客户端；未配置时回退环境变量。
+- [x] `AiService` 在 `createDraft` / `createDraftFromFile` 中优先使用 `getUserModelConfig`。
+- [x] 新增 `POST /ai/plan-drafts/from-file`，请求体 `ImportPlanFileDto`：
+  - `content`：文件文本内容。
+  - `scope`：`master` | `weekly`。
+  - `parentGoalId`：`weekly` 模式下必须关联已有目标。
+  - `planDuration` / `stageLength`：可选，默认 30 / 7。
+- [x] `PlanOrchestrator.generateDraftFromFile`：根据 scope 组装不同 prompt，输出标准 `PlanDraftPayload`。
+- [x] 落库 `PlanVersion.source = 'ai-file'`，并记录 `AIOperation`。
+
+### Flutter 任务
+
+- [x] 新增 `AiConfigScreen`（AI 设置页）：
+  - 输入 Provider、Model、Base URL、API Key。
+  - 保存后调用 `PATCH /users/me/ai-config`。
+- [x] 新增 `AiPlanImportScreen`（计划文件导入页）：
+  - 使用 `file_picker` 选择 txt/md/json。
+  - 选择 `scope`（总计划 / 周计划）。
+  - 周计划模式下从已有目标下拉选择 `parentGoalId`。
+  - 展示 AI 生成的草案，支持确认落库。
+- [x] `MoreScreen` 增加「AI 设置」与「计划文件导入」入口。
+- [x] `ai_config_provider.dart` / `ai_provider.dart` 补充对应方法。
+
+### 验证标准
+
+- [x] 后端 `npx tsc --build --force tsconfig.json` 成功，生成 148 个 JS 文件。
+- [x] 后端部署后 `curl https://xutaostudy.xyz/api/v1/health` 返回 ok，日志确认新端点已注册。
+- [x] `flutter analyze --no-pub` 无 issues。
+- [x] `flutter build apk --release` 成功，产物 `releases/plan-week34-ai-import.apk`（62.1MB）。
+- [x] `flutter build windows --release` 成功，产物 `releases/plan-week34-ai-import.exe`（767KB）。
+
+### 风险点
+
+- [ ] 真机端到端测试（自定义 AI Key + 计划文件导入）尚未执行。
+- [ ] `file_picker` 在部分 Android 版本上需要额外存储权限；已用 `withData: true` 读取文件内容。
+- [ ] 计划文件内容格式自由度大，AI 解析可能不稳定；建议用户上传结构清晰的 markdown 或 JSON。
+- [ ] 周计划模式下，AI 对日期的解析依赖文件内显式描述，若未写明“周一/周二”可能全部落到同一天。
+
+---
+
+## 19. 未来更新计划（Week 35+）
 
 > 优先级调整决策：`decisions/2026-08-16-后续开发优先级调整决策.md`
 >
@@ -718,7 +772,7 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 
 ---
 
-## 19. 文档维护约定
+## 20. 文档维护约定
 
 1. 每个 Week 开始和结束时，必须更新本文档对应章节的 checkbox 状态。
 2. 每个 Week 结束时，必须更新 `planning-app/docs/development-log.md` 增加该 Week 章节。
@@ -730,17 +784,20 @@ Week 27 APK 在 vivo 真机运行 6 分钟无崩溃，但日志暴露出 4 个�
 
 ## 20. 下一步行动（当前待执行）
 
-当前基线为 **Week 33 结束**，复盘追问历史、提醒实时化、FCM 代理支持已落地，后端已部署。下一步建议：
+当前基线为 **Week 34 结束**，AI API 自定义与计划文件导入已实现，后端已部署，APK/EXE 已构建。下一步建议：
 
 1. **测试与修复**
-   - 真机测试复盘追问历史 UI、15 秒提醒实时性。
-   - 配置 `GOOGLE_API_PROXY` 后验证 FCM 端到端远程推送。
+   - 真机/桌面端测试 AI 设置保存后是否生效。
+   - 上传总计划文件，确认生成目标/里程碑/习惯并成功落库。
+   - 上传周计划文件并关联已有目标，确认生成带日期的任务。
+   - 验证自定义 AI Key 后，AI 调用走用户配置而非服务端默认。
 
 2. **可选增强（低优先级）**
    - 复盘历史跨会话持久化（后端 `GET /ai/sessions/:id/messages`）。
    - 更短提醒扫描间隔（如 5 秒）或本地通知兜底策略。
+   - 计划文件导入支持 PDF/Word/图片 OCR。
 
 3. **文档与交付**
    - 保持 `development-log.md`、`handover-summary.md`、`项目开发总结报告.md` 与代码状态同步。
 
-完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 29+）** 中，作为后续商业版本的开发备份，当前不执行。
+完整商业化/社交/团队版计划已保留在 **未来更新计划（Week 35+）** 中，作为后续商业版本的开发备份，当前不执行。

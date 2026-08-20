@@ -38,7 +38,7 @@
 
 ## 3. 开发进度总览
 
-所有 Week 0—15 内容已在 `docs/development-log.md` 详细记录。本文档重点补充 **Week 15 当前状态** 与 **整体缺口**。
+所有 Week 0—34 内容已在 `docs/development-log.md` 详细记录。本文档重点补充 **Week 34 当前状态** 与 **整体缺口**。
 
 ### 3.1 已完成功能
 
@@ -157,6 +157,12 @@
 - [x] **Week 32 新增**：订阅管理弹窗显示同步中/导入数量/失败错误
 - [x] **Week 32 新增**：ReviewScreen 多轮追问入口（调用 `POST /ai/review` 传 `sessionId` + `followUp`）
 - [x] **Week 27-D 新增**：SyncEngine 操作结果广播流与指数退避重试
+- [x] **Week 34 新增**：后端 `User` 模型新增 `aiProvider` / `aiModel` / `aiBaseUrl` / `aiApiKey`，支持用户级 AI 配置
+- [x] **Week 34 新增**：后端新增 `GET /users/me/ai-config` 与 `PATCH /users/me/ai-config`
+- [x] **Week 34 新增**：`ModelAdapter` 按用户配置创建 OpenAI 客户端，未配置回退环境变量
+- [x] **Week 34 新增**：后端新增 `POST /ai/plan-drafts/from-file` 计划文件导入
+- [x] **Week 34 新增**：Flutter 新增 `AiConfigScreen`（AI 设置）与 `AiPlanImportScreen`（计划文件导入）
+- [x] **Week 34 新增**：Flutter `MoreScreen` 增加「AI 设置」与「计划文件导入」入口
 
 ### 3.2 已生成数据模型
 
@@ -183,6 +189,7 @@
 | **SyncEvent** | 已应用 | 多端同步事件表，迁移已部署 |
 | **UserProfileSnapshot** | 已应用 | Week 24 新增，用于缓存用户画像摘要与刷新时间 |
 | User.fcmToken | 已应用 | Week 27 新增，保存 Flutter FCM Token |
+| User.aiProvider / aiModel / aiBaseUrl / aiApiKey | 已应用 | Week 34 新增，用户级 AI 配置 |
 
 ---
 

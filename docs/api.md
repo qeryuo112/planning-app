@@ -18,6 +18,24 @@
 |------|------|------|
 | GET | `/users/me` | 获取当前用户资料与偏好，缺失字段返回默认值 |
 | PATCH | `/users/me/preferences` | 部分更新时区、可用时间、精力曲线、通知设置（未提供字段不覆盖；JSON 字段与现有值合并） |
+| GET | `/users/me/ai-config` | 获取当前用户 AI 配置（provider、model、baseUrl、apiKey），未设置时返回空字段 |
+| PATCH | `/users/me/ai-config` | 更新用户 AI 配置；留空字段表示清除或保持服务端默认 |
+| POST | `/users/me/fcm-token` | 上传/清空 FCM Token；token 为空时清除 |
+
+### AI 配置请求体示例
+
+```json
+{
+  "aiProvider": "deepseek",
+  "aiModel": "deepseek-chat",
+  "aiBaseUrl": "https://api.deepseek.com/v1",
+  "aiApiKey": "sk-xxxxxxxx"
+}
+```
+
+- 四个字段全部留空或不提供时，AI 调用回退到服务端 `.env` 中的 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`。
+- 只要提供 `aiApiKey`，就会使用该 key 创建 OpenAI 兼容客户端。
+- `aiProvider` 仅用于日志标签，不影响实际路由。
 
 ## 目标
 
@@ -96,12 +114,44 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/ai/plan-drafts` | 创建计划草案，可指定 `templateId` 使用预置模板；优先调用真实 LLM，失败/超限降级为模板或占位草案 |
+| POST | `/ai/plan-drafts/from-file` | 上传计划文件内容，AI 解析后生成草案；`scope=master` 生成目标/里程碑/习惯，`scope=weekly` 基于 `parentGoalId` 生成带 `scheduledDate` 的任务 |
 | GET | `/ai/plan-drafts/:id` | 获取已保存的草案 |
 | GET | `/ai/plan-drafts/:id/stream` | 流式草案推送（占位） |
 | POST | `/ai/plan-drafts/:id/approve` | 确认草案，事务落库，可选 feedback |
 | POST | `/ai/plan-drafts/:id/advance` | 进入下一阶段，生成新的 PlanVersion（使用 cheap 模型） |
 | POST | `/ai/replan` | 基于目标最新 PlanVersion 与执行进度，重新生成下一阶段计划（使用 strong 模型） |
 | POST | `/ai/review` | 生成目标日/周复盘摘要（使用 strong 模型） |
+
+### 计划文件导入请求体示例
+
+```json
+{
+  "content": "2026 考研计划...",
+  "fileName": "master-plan.md",
+  "scope": "master",
+  "requirements": "优先数学，每天 2 小时英语",
+  "planDuration": 180,
+  "stageLength": 30
+}
+```
+
+`scope=weekly` 示例：
+
+```json
+{
+  "content": "第 3 周：周一背 50 个单词...",
+  "fileName": "week-3.md",
+  "scope": "weekly",
+  "parentGoalId": "目标 UUID",
+  "planDuration": 7,
+  "stageLength": 1
+}
+```
+
+- `content`：文件文本内容（支持 txt / md / json）。
+- `scope=master`：生成总目标、子目标、里程碑、习惯。
+- `scope=weekly`：必须提供 `parentGoalId`，AI 会根据文件内容生成具体日期（相对当周或文件内显式日期）的任务。
+- `planDuration` / `stageLength` 可选，默认 `30` / `7`。
 | GET | `/ai/templates` | 列出预置领域模板 |
 | GET | `/ai/templates/recommend?input=...` | 根据用户输入推荐最匹配的模板 |
 | GET | `/ai/usage` | 获取当前用户当日 AI 用量（费用、上限、调用次数） |

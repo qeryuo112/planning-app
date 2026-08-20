@@ -3129,3 +3129,107 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 
 - 个人版：保留当前 FCM + 本地通知双轨方案，不强制 VPN 也能使用。
 - 商业版/国内大规模使用：考虑接入极光、小米、华为等国内推送通道。
+
+
+---
+
+## Week 34：AI API 自定义与计划文件导入（2026-08-20）
+
+### 目标
+
+1. 支持用户自定义 AI Provider、模型、Base URL、API Key。
+2. 支持上传 txt/md/json 计划文件，AI 自动解析并生成 App 数据（目标、里程碑、习惯、任务）。
+3. 支持“总计划 → 周计划”两层导入：总计划生成骨架目标，周计划基于已有目标生成具体日任务。
+
+### 后端任务
+
+- [x] User 表新增 `aiProvider`、`aiModel`、`aiBaseUrl`、`aiApiKey` 四个字段（服务器已直接 `ALTER TABLE`）。
+- [x] 新增 `GET /users/me/ai-config` 与 `PATCH /users/me/ai-config`。
+- [x] `ModelAdapter` 支持 `getConfigFromUserFields`，按用户配置创建 OpenAI 客户端；未配置时回退环境变量。
+- [x] `AiService` 在 `createDraft` / `createDraftFromFile` 中优先使用 `getUserModelConfig`。
+- [x] 新增 `POST /ai/plan-drafts/from-file`，请求体 `ImportPlanFileDto`：
+  - `content`：文件文本内容。
+  - `scope`：`master` | `weekly`。
+  - `parentGoalId`：`weekly` 模式下必须关联已有目标。
+  - `planDuration` / `stageLength`：可选，默认 30 / 7。
+- [x] `PlanOrchestrator.generateDraftFromFile`：根据 scope 组装不同 prompt，输出标准 `PlanDraftPayload`。
+- [x] 落库 `PlanVersion.source = 'ai-file'`，并记录 `AIOperation`。
+
+### Flutter 任务
+
+- [x] 新增 `AiConfigScreen`（AI 设置页）：
+  - 输入 Provider、Model、Base URL、API Key。
+  - 保存后调用 `PATCH /users/me/ai-config`。
+- [x] 新增 `AiPlanImportScreen`（计划文件导入页）：
+  - 使用 `file_picker` 选择 txt/md/json。
+  - 选择 `scope`（总计划 / 周计划）。
+  - 周计划模式下从已有目标下拉选择 `parentGoalId`。
+  - 展示 AI 生成的草案，支持确认落库。
+- [x] `MoreScreen` 增加「AI 设置」与「计划文件导入」入口。
+- [x] `ai_config_provider.dart` / `ai_provider.dart` 补充对应方法。
+
+### 关键文件
+
+- `services/api/src/modules/users/users.controller.ts`
+- `services/api/src/modules/users/users.service.ts`
+- `services/api/src/modules/users/dto/update-ai-config.dto.ts`
+- `services/api/src/modules/ai/ai.controller.ts`
+- `services/api/src/modules/ai/ai.service.ts`
+- `services/api/src/modules/ai/dto/import-plan-file.dto.ts`
+- `services/api/src/modules/ai/model-adapter.service.ts`
+- `services/api/src/modules/ai/plan-orchestrator.service.ts`
+- `apps/mobile/lib/screens/ai_config_screen.dart`
+- `apps/mobile/lib/screens/ai_plan_import_screen.dart`
+- `apps/mobile/lib/providers/ai_config_provider.dart`
+- `apps/mobile/lib/providers/ai_provider.dart`
+- `apps/mobile/lib/screens/more_screen.dart`
+- `apps/mobile/pubspec.yaml`
+
+### Schema 变更
+
+- `users` 表新增：
+  - `aiProvider TEXT`
+  - `aiModel TEXT`
+  - `aiBaseUrl TEXT`
+  - `aiApiKey TEXT`
+- `PlanVersion.source` 新增枚举值 `ai-file`。
+
+详见 `docs/schema-changes.md`。
+
+### API 变更
+
+- `GET /users/me/ai-config`：获取当前用户 AI 配置。
+- `PATCH /users/me/ai-config`：更新用户 AI 配置。
+- `POST /ai/plan-drafts/from-file`：上传计划文件内容，AI 解析生成草案。
+
+详见 `docs/api.md`。
+
+### 构建与部署
+
+- 后端：本地 `npx tsc --build --force tsconfig.json` 成功，生成 148 个 JS 文件；通过 tar + scp 上传到服务器 `/opt/planning-app/services/api/dist/`；`planning-api.service` 重启成功。
+- 服务器健康检查：`curl https://xutaostudy.xyz/api/v1/health` 返回 `{"status":"ok"}`。
+- 服务器日志确认新端点已注册：`/api/users/me/ai-config` 与 `/api/ai/plan-drafts/from-file`。
+- Flutter：`flutter analyze --no-pub` 无 issues。
+- APK：`flutter build apk --release` 成功，产物 `releases/plan-week34-ai-import.apk`（62.1MB）。
+- EXE：`flutter build windows --release` 成功，产物 `releases/plan-week34-ai-import.exe`（767KB）。
+
+### 验证结果
+
+- [x] 后端 `npx tsc --build --force tsconfig.json`：通过 ✅
+- [x] 服务器部署后健康检查：通过 ✅
+- [x] 服务器日志确认 `/api/users/me/ai-config` 与 `/api/ai/plan-drafts/from-file` 已注册 ✅
+- [x] `flutter analyze --no-pub`：`No issues found!` ✅
+- [x] `flutter build apk --release`：成功 ✅
+- [x] `flutter build windows --release`：成功 ✅
+- [ ] 真机/桌面端到端测试（AI 设置 + 文件导入 + 落库）待用户验证。
+
+### 已知限制与风险
+
+- FCM 服务账号文件 `firebase-service-account.json` 在服务器上仍缺失，远程推送功能受影响（非本次任务范围）。
+- `file_picker` 在部分 Android 版本可能需要额外存储权限；当前使用 `withData: true` 直接读取文件内容。
+- 计划文件格式自由度大，AI 解析稳定性依赖文件结构清晰度。
+- 周计划模式下，日期解析依赖文件内显式描述（如“周一/周二”），否则可能全部落到同一天。
+
+### 进入下一步
+
+Week 35：测试 Week 34 新功能，修复真机/桌面端问题；如稳定则进入低优先级增强或后续 Week。

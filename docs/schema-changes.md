@@ -206,3 +206,42 @@ npx prisma migrate deploy
 - `AiService.createDraft` / `replan` / `review` 会读写 `AISession` / `AIMessage`。
 - `FcmService` 上传的 Token 由 `UsersService.updateFcmToken` 写入 `User.fcmToken`。
 - `AnalyticsController` 新增 `POST /analytics/events` 与 `POST /analytics/events/batch` 供客户端上报事件。
+
+## 2026-08-20 Week 34 用户级 AI 配置与计划文件导入
+
+### 变更内容
+
+1. **User 模型新增 `aiProvider`、`aiModel`、`aiBaseUrl`、`aiApiKey`**
+   - 类型：`String?`
+   - 原因：支持每个用户配置独立的 AI Provider、模型、Base URL 与 API Key，实现用户级 AI 接口自定义。
+
+2. **PlanVersion 的 `source` 字段扩展**
+   - 新增来源值 `ai-file`：表示该 PlanVersion 由上传的计划文件解析生成。
+   - 原有 `ai`、`fallback`、`manual` 等值保持不变。
+
+### 迁移方式
+
+生产环境（服务器已部署）已通过直接 `ALTER TABLE` 添加列：
+
+```sql
+ALTER TABLE users
+ADD COLUMN aiProvider TEXT,
+ADD COLUMN aiModel TEXT,
+ADD COLUMN aiBaseUrl TEXT,
+ADD COLUMN aiApiKey TEXT;
+```
+
+本地开发环境如需生成迁移文件：
+
+```bash
+cd services/api
+npx prisma migrate dev --name add_user_ai_config
+```
+
+### 影响范围
+
+- `@prisma/client` 类型需重新生成：`npx prisma generate`。
+- `UsersService` 新增 `getAiConfig` / `updateAiConfig`。
+- `AiService.createDraft` / `createDraftFromFile` 优先使用 `getUserModelConfig` 获取用户级配置，未配置时回退到环境变量。
+- `ModelAdapter` 支持按用户配置创建 OpenAI 客户端。
+- 新增移动端 `AiConfigScreen` 与 `AiPlanImportScreen`。

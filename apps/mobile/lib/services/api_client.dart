@@ -118,39 +118,26 @@ class ApiClient {
 
   /// 上传文件（multipart/form-data）。
   /// [fieldName] 为后端接收的字段名，[fileName] 为原始文件名。
-  /// 传入 [filePath] 时直接从磁盘流式读取，避免把文件完整加载到 Dart 内存；
-  /// 传入 [fileBytes] 时从内存上传。
+  /// 仅支持 [filePath] 从磁盘流式读取，避免把文件完整加载到 Dart 内存，
+  /// 且本地不做任何内容解析（不读取 bytes 到业务层、不判断文件类型）。
   Future<dynamic> uploadFile(
     String path, {
-    String? filePath,
-    List<int>? fileBytes,
+    required String filePath,
     required String fieldName,
     required String fileName,
     Map<String, String>? fields,
   }) async {
-    if (filePath == null && fileBytes == null) {
-      throw ArgumentError('filePath 和 fileBytes 不能同时为空');
-    }
-
     final uri = Uri.parse('$baseUrl$path');
     _logger.d('UPLOAD $uri file=$fileName fields=$fields');
 
     Future<http.StreamedResponse> doRequest(Map<String, String> headers) async {
       final request = http.MultipartRequest('POST', uri);
       request.headers.addAll(headers);
-      if (filePath != null) {
-        request.files.add(await http.MultipartFile.fromPath(
-          fieldName,
-          filePath,
-          filename: fileName,
-        ));
-      } else {
-        request.files.add(http.MultipartFile.fromBytes(
-          fieldName,
-          fileBytes!,
-          filename: fileName,
-        ));
-      }
+      request.files.add(await http.MultipartFile.fromPath(
+        fieldName,
+        filePath,
+        filename: fileName,
+      ));
       if (fields != null) {
         request.fields.addAll(fields);
       }

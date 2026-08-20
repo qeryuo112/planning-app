@@ -3235,10 +3235,46 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 ### 已知限制与风险
 
 - FCM 服务账号文件 `firebase-service-account.json` 在服务器上仍缺失，远程推送功能受影响（非本次任务范围）。
-- `file_picker` 在部分 Android 版本可能需要额外存储权限；当前使用 `withData: true` 直接读取文件内容。
+- `file_picker` 使用 `withData: false`，本地仅获取文件路径，不读取文件内容；上传通过 `http.MultipartFile.fromPath` 流式发送，同样不在业务层解析文件。
 - 计划文件格式自由度大，AI 解析稳定性依赖文件结构清晰度。
 - 周计划模式下，日期解析依赖文件内显式描述（如“周一/周二”），否则可能全部落到同一天。
 
 ### 进入下一步
 
 Week 35：测试 Week 34 新功能，修复真机/桌面端问题；如稳定则进入低优先级增强或后续 Week。
+
+## 2026-08-20 Week 34 修复：彻底移除移动端文件本地解析
+
+### 问题
+
+用户反馈：计划文件导入流程里，移动端（本地）仍在对文件做解析/处理。
+
+### 排查结果
+
+- `apps/mobile/lib/providers/ai_provider.dart` 残留旧的 `importFromFile(String content)` 方法，会把文件内容字符串直接 POST 到 `/ai/plan-drafts/from-file`。
+- `apps/mobile/lib/services/api_client.dart` 的 `uploadFile` 同时支持 `filePath` 与 `fileBytes`，存在从内存 bytes 上传的回退路径。
+- 上述旧逻辑已不再被 UI 调用，但代码残留容易造成误解。
+- 当前 UI（`AiPlanImportScreen`）实际已使用 `FilePicker.platform.pickFiles(withData: false)` 仅取文件路径，再经 `MultipartFile.fromPath` 流式上传到服务端；业务层没有 `jsonDecode`、没有文本提取、没有扩展名限制。
+
+### 修复内容
+
+- **删除** `ai_provider.dart` 中的 `importFromFile(String content)` 方法。
+- **改造** `uploadAndImportFile` 只接受 `filePath`，不再接受 `fileBytes`。
+- **改造** `api_client.dart` 的 `uploadFile`：
+  - 移除 `fileBytes` 参数与 `MultipartFile.fromBytes` 分支。
+  - 仅保留 `MultipartFile.fromPath` 流式读取发送。
+  - 注释明确说明：本地只负责路径选择 + 网络流传输，不做任何内容解析。
+- **保留** `AiPlanImportScreen` 的 `withData: false` 选择器逻辑，仅获取路径。
+- 重新运行 `flutter analyze --no-pub`：无 issues。
+- 重新构建 APK（`app-arm64-v8a-release.apk` 22.7MB，覆盖 `releases/plan-week34-ai-import.apk`）。
+- 重新构建 Windows EXE（完成后覆盖 `releases/plan-week34-ai-import.exe`）。
+
+### 参考 kimiokc 的上传方案
+
+- 服务器 `/opt/kimiokc/upload-server/server.js`：前端通过 `FormData` 把文件上传到独立文件服务器，得到公网 URL 后再把 URL 传给 AI 后端。
+- planning-app 当前方案与此等价：移动端把文件流传给后端 → 后端上传到 OSS 得到 URL → AI 按 URL/content blocks 解析。区别只是文件先经过后端再转 OSS，而不是先经过独立 upload-server。
+- 两者的本地前端都不会对文件内容做语义解析，只负责选择文件并上传。
+
+### 关键说明
+
+> `http.MultipartFile.fromPath` 会打开文件并读取字节流用于网络传输，这是上传必需的 IO，不是“解析”（不做格式判断、不转文本、不 jsonDecode）。如果用户希望连传输字节都不可见，需要改为服务端预签名 URL + 客户端直传 OSS，改动较大，不在本次修复范围。

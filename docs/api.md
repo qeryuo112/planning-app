@@ -115,7 +115,7 @@
 |------|------|------|
 | POST | `/ai/plan-drafts` | 创建计划草案，可指定 `templateId` 使用预置模板；优先调用真实 LLM，失败/超限降级为模板或占位草案 |
 | POST | `/ai/plan-drafts/from-file` | 上传计划文件内容（JSON body 传 `content`），AI 解析后生成草案 |
-| POST | `/ai/plan-drafts/from-upload` | **推荐**：以 `multipart/form-data` 上传任意文件，服务端先上传到 OSS，再按文件类型转为 AI content blocks（文本 / 图片 / 视频 / PDF 页 / PPTX 文本），由 AI 直接解析 |
+| POST | `/ai/plan-drafts/from-upload` | **推荐 / 移动端唯一入口**：以 `multipart/form-data` 上传任意文件，本地不做内容解析；服务端上传到 OSS 后按文件类型转为 AI content blocks，由 AI 直接解析 |
 | GET | `/ai/plan-drafts/:id` | 获取已保存的草案 |
 | GET | `/ai/plan-drafts/:id/stream` | 流式草案推送（占位） |
 | POST | `/ai/plan-drafts/:id/approve` | 确认草案，事务落库，可选 feedback |

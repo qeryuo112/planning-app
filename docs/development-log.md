@@ -3154,6 +3154,7 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
   - `planDuration` / `stageLength`：可选，默认 30 / 7。
 - [x] `PlanOrchestrator.generateDraftFromFile`：根据 scope 组装不同 prompt，输出标准 `PlanDraftPayload`。
 - [x] 落库 `PlanVersion.source = 'ai-file'`，并记录 `AIOperation`。
+- [x] **服务端文件解析**：新增 `POST /ai/plan-drafts/from-upload`，移动端通过 `multipart/form-data` 上传文件，服务端读取文件内容后交给 AI 解析，本地不再把文件内容转成字符串。
 
 ### Flutter 任务
 
@@ -3165,6 +3166,7 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
   - 选择 `scope`（总计划 / 周计划）。
   - 周计划模式下从已有目标下拉选择 `parentGoalId`。
   - 展示 AI 生成的草案，支持确认落库。
+  - **改为 multipart 上传文件到服务端，由服务端读取并解析，本地不处理文件内容**。
 - [x] `MoreScreen` 增加「AI 设置」与「计划文件导入」入口。
 - [x] `ai_config_provider.dart` / `ai_provider.dart` 补充对应方法。
 

@@ -114,7 +114,8 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/ai/plan-drafts` | 创建计划草案，可指定 `templateId` 使用预置模板；优先调用真实 LLM，失败/超限降级为模板或占位草案 |
-| POST | `/ai/plan-drafts/from-file` | 上传计划文件内容，AI 解析后生成草案；`scope=master` 生成目标/里程碑/习惯，`scope=weekly` 基于 `parentGoalId` 生成带 `scheduledDate` 的任务 |
+| POST | `/ai/plan-drafts/from-file` | 上传计划文件内容（JSON body 传 `content`），AI 解析后生成草案 |
+| POST | `/ai/plan-drafts/from-upload` | **推荐**：以 `multipart/form-data` 上传计划文件，由服务端读取文件内容后交给 AI 解析 |
 | GET | `/ai/plan-drafts/:id` | 获取已保存的草案 |
 | GET | `/ai/plan-drafts/:id/stream` | 流式草案推送（占位） |
 | POST | `/ai/plan-drafts/:id/approve` | 确认草案，事务落库，可选 feedback |
@@ -122,7 +123,31 @@
 | POST | `/ai/replan` | 基于目标最新 PlanVersion 与执行进度，重新生成下一阶段计划（使用 strong 模型） |
 | POST | `/ai/review` | 生成目标日/周复盘摘要（使用 strong 模型） |
 
-### 计划文件导入请求体示例
+### 计划文件导入方式
+
+#### 方式 1：multipart 上传（推荐，移动端使用）
+
+`POST /ai/plan-drafts/from-upload`
+
+```bash
+curl -X POST https://xutaostudy.xyz/api/v1/ai/plan-drafts/from-upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@master-plan.txt" \
+  -F "scope=master" \
+  -F "planDuration=180" \
+  -F "stageLength=30"
+```
+
+字段说明：
+- `file`：文件内容（支持 txt / md / json）。
+- `scope`：`master` | `weekly`。
+- `parentGoalId`：`weekly` 模式下必须关联已有目标。
+- `requirements`：可选，补充要求。
+- `planDuration` / `stageLength`：可选，默认 `30` / `7`。
+
+#### 方式 2：JSON body 传 content
+
+`POST /ai/plan-drafts/from-file`
 
 ```json
 {
@@ -135,23 +160,8 @@
 }
 ```
 
-`scope=weekly` 示例：
-
-```json
-{
-  "content": "第 3 周：周一背 50 个单词...",
-  "fileName": "week-3.md",
-  "scope": "weekly",
-  "parentGoalId": "目标 UUID",
-  "planDuration": 7,
-  "stageLength": 1
-}
-```
-
-- `content`：文件文本内容（支持 txt / md / json）。
 - `scope=master`：生成总目标、子目标、里程碑、习惯。
 - `scope=weekly`：必须提供 `parentGoalId`，AI 会根据文件内容生成具体日期（相对当周或文件内显式日期）的任务。
-- `planDuration` / `stageLength` 可选，默认 `30` / `7`。
 | GET | `/ai/templates` | 列出预置领域模板 |
 | GET | `/ai/templates/recommend?input=...` | 根据用户输入推荐最匹配的模板 |
 | GET | `/ai/usage` | 获取当前用户当日 AI 用量（费用、上限、调用次数） |

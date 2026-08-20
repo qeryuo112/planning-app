@@ -14,7 +14,7 @@ class AiPlanImportScreen extends ConsumerStatefulWidget {
 class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
   String _scope = 'master';
   String? _fileName;
-  List<int>? _fileBytes;
+  String? _filePath;
   String? _selectedGoalId;
   final _requirementsController = TextEditingController();
   final _planDurationController = TextEditingController(text: '30');
@@ -39,24 +39,25 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['txt', 'md', 'json'],
-      withData: true,
+      type: FileType.any,
+      withData: false,
     );
     if (result == null || result.files.isEmpty) return;
 
     final file = result.files.first;
-    final bytes = file.bytes;
-    if (bytes == null) return;
+    if (file.path == null || file.path!.isEmpty) {
+      _showSnack('无法获取文件路径');
+      return;
+    }
 
     setState(() {
       _fileName = file.name;
-      _fileBytes = bytes;
+      _filePath = file.path;
     });
   }
 
   Future<void> _import() async {
-    if (_fileBytes == null || _fileBytes!.isEmpty) {
+    if (_filePath == null || _filePath!.isEmpty) {
       _showSnack('请先选择文件');
       return;
     }
@@ -67,7 +68,7 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
 
     setState(() => _importing = true);
     final res = await ref.read(aiDraftProvider.notifier).uploadAndImportFile(
-      _fileBytes!,
+      filePath: _filePath!,
       fileName: _fileName ?? 'plan.txt',
       scope: _scope,
       parentGoalId: _scope == 'weekly' ? _selectedGoalId : null,
@@ -122,12 +123,12 @@ class _AiPlanImportScreenState extends ConsumerState<AiPlanImportScreen> {
             OutlinedButton.icon(
               onPressed: _pickFile,
               icon: const Icon(Icons.upload_file),
-              label: Text(_fileName ?? '选择 .txt / .md / .json'),
+              label: Text(_fileName ?? '选择文件（任意类型）'),
             ),
-            if (_fileName != null && _fileBytes != null) ...[
+            if (_fileName != null && _filePath != null) ...[
               const SizedBox(height: 8),
               Text(
-                '已选择：$_fileName（${_fileBytes!.length} 字节），将由服务端读取并解析',
+                '已选择：$_fileName，将由服务端上传 OSS 并解析',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

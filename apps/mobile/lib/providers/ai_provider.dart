@@ -175,8 +175,10 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
   }
 
   /// 上传文件到服务端解析，服务端读取文件内容后调用 AI 生成计划草案。
-  Future<Map<String, dynamic>?> uploadAndImportFile(
-    List<int> fileBytes, {
+  /// 优先使用 [filePath] 从磁盘流式读取，避免把文件完整加载到内存。
+  Future<Map<String, dynamic>?> uploadAndImportFile({
+    String? filePath,
+    List<int>? fileBytes,
     required String fileName,
     required String scope,
     String? parentGoalId,
@@ -184,10 +186,15 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     int planDuration = 30,
     int stageLength = 7,
   }) async {
+    if (filePath == null && fileBytes == null) {
+      state = AsyncValue.error('filePath 和 fileBytes 不能同时为空', StackTrace.current);
+      return null;
+    }
     state = const AsyncValue.loading();
     try {
       final res = await _client.uploadFile(
         '/ai/plan-drafts/from-upload',
+        filePath: filePath,
         fileBytes: fileBytes,
         fieldName: 'file',
         fileName: fileName,

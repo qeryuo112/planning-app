@@ -221,15 +221,17 @@ npx prisma migrate deploy
 
 ### 迁移方式
 
-生产环境（服务器已部署）已通过直接 `ALTER TABLE` 添加列：
+生产环境（服务器已部署）已通过直接 `ALTER TABLE` 添加列，**必须使用双引号保留 camelCase 列名**：
 
 ```sql
 ALTER TABLE users
-ADD COLUMN aiProvider TEXT,
-ADD COLUMN aiModel TEXT,
-ADD COLUMN aiBaseUrl TEXT,
-ADD COLUMN aiApiKey TEXT;
+ADD COLUMN "aiProvider" TEXT,
+ADD COLUMN "aiModel" TEXT,
+ADD COLUMN "aiBaseUrl" TEXT,
+ADD COLUMN "aiApiKey" TEXT;
 ```
+
+> ⚠️ 坑：PostgreSQL 默认会把未加引号的标识符折叠为小写。如果执行 `ADD COLUMN aiProvider TEXT`，数据库会创建 `aiprovider`，Prisma 查询带引号的 `"aiProvider"` 时会报 `column does not exist`。Week 34 部署时因此踩坑，已修复为带引号的列名。
 
 本地开发环境如需生成迁移文件：
 

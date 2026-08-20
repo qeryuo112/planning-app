@@ -3209,6 +3209,11 @@ Week 28 修复后 Android 真机已能正常初始化 Firebase 并上传 FCM tok
 - 后端：本地 `npx tsc --build --force tsconfig.json` 成功，生成 148 个 JS 文件；通过 tar + scp 上传到服务器 `/opt/planning-app/services/api/dist/`；`planning-api.service` 重启成功。
 - 服务器健康检查：`curl https://xutaostudy.xyz/api/v1/health` 返回 `{"status":"ok"}`。
 - 服务器日志确认新端点已注册：`/api/users/me/ai-config` 与 `/api/ai/plan-drafts/from-file`。
+- **部署踩坑与修复**：
+  - 首次部署后 `GET/PATCH /users/me/ai-config` 报 500，原因是服务器只执行了 `npx prisma generate`，未运行带双引号的 `ALTER TABLE`。
+  - PostgreSQL 把未加引号的 `aiProvider` 折叠为小写 `aiprovider`，导致 Prisma 查询 `"aiProvider"` 时报 `column does not exist`。
+  - 修复：在服务器执行 `ALTER TABLE users ADD COLUMN "aiProvider" TEXT, ADD COLUMN "aiModel" TEXT, ADD COLUMN "aiBaseUrl" TEXT, ADD COLUMN "aiApiKey" TEXT;`。
+  - 该问题同时导致登录也 500（`prisma.user.findUnique()` 会 select 所有模型字段），修复后登录恢复正常。
 - Flutter：`flutter analyze --no-pub` 无 issues。
 - APK：`flutter build apk --release` 成功，产物 `releases/plan-week34-ai-import.apk`（62.1MB）。
 - EXE：`flutter build windows --release` 成功，产物 `releases/plan-week34-ai-import.exe`（767KB）。

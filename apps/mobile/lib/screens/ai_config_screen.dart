@@ -114,6 +114,7 @@ class _AiConfigScreenState extends ConsumerState<AiConfigScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Base URL（可选）',
                       hintText: 'https://api.deepseek.com/v1',
+                      helperText: '只需填到 /v1，不要加 /chat/completions',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -146,12 +147,19 @@ class _AiConfigScreenState extends ConsumerState<AiConfigScreen> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    final res = await ref.read(aiConfigProvider.notifier).updateConfig(
-      aiProvider: _providerController.text.trim().isEmpty ? null : _providerController.text.trim(),
-      aiModel: _modelController.text.trim().isEmpty ? null : _modelController.text.trim(),
-      aiBaseUrl: _baseUrlController.text.trim().isEmpty ? null : _baseUrlController.text.trim(),
-      aiApiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(),
-    );
+    final notifier = ref.read(aiConfigProvider.notifier);
+    Object? error;
+    Map<String, dynamic>? res;
+    try {
+      res = await notifier.updateConfig(
+        aiProvider: _providerController.text.trim().isEmpty ? null : _providerController.text.trim(),
+        aiModel: _modelController.text.trim().isEmpty ? null : _modelController.text.trim(),
+        aiBaseUrl: _baseUrlController.text.trim().isEmpty ? null : _baseUrlController.text.trim(),
+        aiApiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(),
+      );
+    } catch (e) {
+      error = e;
+    }
     setState(() => _saving = false);
     if (!mounted) return;
     if (res != null) {
@@ -159,8 +167,9 @@ class _AiConfigScreenState extends ConsumerState<AiConfigScreen> {
         const SnackBar(content: Text('AI 配置已保存')),
       );
     } else {
+      final message = error?.toString() ?? '保存失败';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存失败')),
+        SnackBar(content: Text('保存失败: $message'), duration: const Duration(seconds: 6)),
       );
     }
   }

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/settings_provider.dart';
 import '../providers/reminder_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/notification_service.dart';
+import 'login_screen.dart';
 
 const _weekdays = [
   ('monday', '周一'),
@@ -145,6 +147,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('保存'),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: () async {
+                  final navigator = Navigator.of(context);
+                  await ref.read(authStateProvider.notifier).logout();
+                  if (mounted) {
+                    navigator.pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
+                },
+                child: const Text('退出登录'),
               ),
               const SizedBox(height: 32),
             ],

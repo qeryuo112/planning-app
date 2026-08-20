@@ -8,6 +8,8 @@ import 'social_screen.dart';
 import 'fitness_import_screen.dart';
 import 'reports_screen.dart';
 import 'ai_insights_screen.dart';
+import 'ai_config_screen.dart';
+import 'ai_plan_import_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -21,6 +23,22 @@ class MoreScreen extends StatelessWidget {
         color: const Color(0xFF7C4DFF),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const SocialScreen()),
+        ),
+      ),
+      _MenuItem(
+        icon: Icons.upload_file,
+        label: '计划文件导入',
+        color: const Color(0xFF26A69A),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AiPlanImportScreen()),
+        ),
+      ),
+      _MenuItem(
+        icon: Icons.smart_toy,
+        label: 'AI 设置',
+        color: const Color(0xFF5C6BC0),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AiConfigScreen()),
         ),
       ),
       _MenuItem(

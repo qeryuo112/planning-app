@@ -146,6 +146,34 @@ class AiDraftNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     }
   }
 
+  Future<Map<String, dynamic>?> importFromFile(
+    String content, {
+    required String scope,
+    String? parentGoalId,
+    String? requirements,
+    String? fileName,
+    int planDuration = 30,
+    int stageLength = 7,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final res = await _client.post('/ai/plan-drafts/from-file', body: {
+        'content': content,
+        'scope': scope,
+        if (parentGoalId != null) 'parentGoalId': parentGoalId,
+        if (requirements != null) 'requirements': requirements,
+        if (fileName != null) 'fileName': fileName,
+        'planDuration': planDuration,
+        'stageLength': stageLength,
+      });
+      state = AsyncValue.data(res);
+      return res;
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> approveDraft(String draftId, {String? feedback}) async {
     try {
       final res = await _client.post('/ai/plan-drafts/$draftId/approve', body: {

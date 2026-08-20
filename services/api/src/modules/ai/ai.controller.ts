@@ -15,6 +15,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Express } from "express";
 import { AiService } from "./ai.service";
 import { AiInsightsService } from "./ai-insights.service";
+import { uploadBufferToOSS, isOSSConfigured } from "./oss.service";
 import { CreatePlanDraftDto } from "./dto/create-plan-draft.dto";
 import { ImportPlanFileDto } from "./dto/import-plan-file.dto";
 import { ImportPlanFileUploadDto } from "./dto/import-plan-file-upload.dto";
@@ -64,7 +65,7 @@ export class AiController {
 
   @Post("plan-drafts/from-upload")
   @UseInterceptors(FileInterceptor("file"))
-  importPlanFromUpload(
+  async importPlanFromUpload(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: ImportPlanFileUploadDto,
     @CurrentUser() user: CurrentUserPayload,
@@ -72,9 +73,16 @@ export class AiController {
     if (!file) {
       throw new BadRequestException("请上传文件");
     }
-    const content = file.buffer.toString("utf-8");
-    return this.aiService.createDraftFromFile(user.userId, {
-      content,
+    if (!isOSSConfigured()) {
+      throw new BadRequestException("OSS 未配置，无法处理上传文件");
+    }
+
+    const ext = file.originalname.split(".").pop()?.toLowerCase() || "bin";
+    const key = `uploads/${Date.now()}-${Math.random().toString(36).slice(2)}-${file.originalname}`;
+    const fileUrl = await uploadBufferToOSS(file.buffer, key, file.mimetype);
+
+    return this.aiService.createDraftFromFileUrl(user.userId, {
+      fileUrl,
       fileName: file.originalname,
       scope: dto.scope,
       parentGoalId: dto.parentGoalId,

@@ -7,6 +7,7 @@ import { AiSessionService } from "./ai-session.service";
 import { ModelAdapter } from "./model-adapter.service";
 import { PlanOrchestrator } from "./plan-orchestrator.service";
 import { PlanExecutor } from "./plan-executor.service";
+import { DocumentProcessor } from "./document-processor.service";
 import { SyncModule } from "../sync/sync.module";
 import { AnalyticsModule } from "../analytics/analytics.module";
 
@@ -21,6 +22,7 @@ import { AnalyticsModule } from "../analytics/analytics.module";
     ModelAdapter,
     PlanOrchestrator,
     PlanExecutor,
+    DocumentProcessor,
   ],
   exports: [AiService, AiInsightsService, AiCleanupService],
 })

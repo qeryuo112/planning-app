@@ -449,6 +449,161 @@ export class AiService {
   }
 
   /**
+   * 从已上传到 OSS 的文件 URL 创建计划草案。
+   * 支持 txt/md/json、图片、视频、PDF、PPTX 等多种格式，由服务端转换为 AI content blocks。
+   */
+  async createDraftFromFileUrl(
+    userId: string,
+    dto: {
+      fileUrl: string;
+      fileName?: string;
+      scope: "master" | "weekly";
+      parentGoalId?: string;
+      requirements?: string;
+      planDuration?: number;
+      stageLength?: number;
+    },
+  ) {
+    this.logger.debug(
+      `创建文件 URL 导入计划草案，fileUrl: ${dto.fileUrl.slice(0, 100)}, scope: ${dto.scope}, parentGoalId: ${dto.parentGoalId ?? "无"}, user=${userId}`,
+    );
+
+    const config = await this.getUserModelConfig(userId);
+    const model = this.resolveModel("cheap", config);
+
+    const constraints: Record<string, unknown> = {
+      planDuration: dto.planDuration ?? 30,
+      stageLength: dto.stageLength ?? 7,
+      currentStage: 1,
+    };
+    if (dto.requirements) {
+      constraints["requirements"] = dto.requirements;
+    }
+
+    let parentGoalTitle: string | undefined;
+    if (dto.parentGoalId) {
+      const parentGoal = await this.prisma.goal.findFirst({
+        where: { id: dto.parentGoalId, userId },
+        select: { title: true },
+      });
+      if (!parentGoal) {
+        throw new NotFoundException("关联目标不存在");
+      }
+      parentGoalTitle = parentGoal.title;
+    }
+
+    const costCheck = await this.checkDailyCostLimit(userId, model);
+    let generation: {
+      draft: any;
+      fallback: boolean;
+      error?: string;
+      usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+      };
+    };
+    let latency = 0;
+
+    if (costCheck.exceeded) {
+      const fallbackReason = `日费用上限已触发（当前 $${costCheck.current.toFixed(4)} / $${costCheck.limit.toFixed(2)} USD），已降级为占位草案`;
+      this.logger.warn(fallbackReason);
+      generation = {
+        draft: this.orchestrator.buildFallbackDraft(
+          dto.fileUrl.slice(0, 50),
+          constraints,
+        ),
+        fallback: true,
+        error: fallbackReason,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    } else {
+      const start = Date.now();
+      generation = await this.orchestrator.generateDraftFromFileUrl(
+        dto.fileUrl,
+        constraints,
+        dto.scope,
+        parentGoalTitle,
+        model,
+        config,
+      );
+      latency = Date.now() - start;
+    }
+
+    const payload = generation.draft;
+    const fallbackReason = generation.fallback
+      ? (generation.error ?? "模型生成失败或校验不通过，已降级到占位草案")
+      : null;
+
+    const planVersion = await this.prisma.planVersion.create({
+      data: {
+        goalId: dto.parentGoalId ?? null,
+        versionNo: 1,
+        source: generation.fallback ? "fallback" : "ai-file",
+        planDuration: payload.planDuration ?? null,
+        stageLength: payload.stageLength ?? null,
+        currentStage: payload.currentStage ?? null,
+        totalStages: payload.totalStages ?? null,
+        payload: payload as any,
+        userFeedback: {
+          scope: dto.scope,
+          fileName: dto.fileName,
+          fileUrl: dto.fileUrl,
+          requirements: dto.requirements,
+          fallbackReason,
+        } as any,
+      },
+    });
+
+    const actualCost = this.estimateCost(
+      config.model,
+      generation.usage?.promptTokens ?? 0,
+      generation.usage?.completionTokens ?? 0,
+    );
+
+    await this.prisma.aIOperation.create({
+      data: {
+        userId,
+        sessionId: null,
+        model: config.model,
+        promptVersion: this.promptVersion,
+        inputTokens: generation.usage?.promptTokens ?? 0,
+        outputTokens: generation.usage?.completionTokens ?? 0,
+        latencyMs: latency,
+        cost: actualCost,
+        result: {
+          draftId: planVersion.id,
+          source: generation.fallback ? "fallback" : "ai-file",
+          error: generation.error ?? undefined,
+          dailyCostAtCall: Number(
+            (costCheck.current + (actualCost ?? 0)).toFixed(6),
+          ),
+        } as any,
+      },
+    });
+
+    void this.analytics.track({
+      userId,
+      eventType: "ai.draft.file_imported",
+      targetId: planVersion.id,
+      metadata: {
+        fallback: !!fallbackReason,
+        scope: dto.scope,
+        model: config.model,
+        fileName: dto.fileName,
+      },
+    });
+
+    return {
+      draftId: planVersion.id,
+      status: "draft",
+      plan: payload,
+      fallback: !!fallbackReason,
+      error: fallbackReason ?? undefined,
+    };
+  }
+
+  /**
    * 创建流式计划草案的初始记录。
    * 仅落库一个 pending 状态的 PlanVersion，不调用模型，供前端随后连接 SSE 流。
    */

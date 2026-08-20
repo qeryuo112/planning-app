@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources";
+import { ProcessedContent } from "./document-processor.service";
 
 export interface StructuredResponse<T> {
   data: T | null;
@@ -160,6 +161,95 @@ export class ModelAdapter {
       }
 
       messages.push({ role: "user", content: prompt });
+
+      const completion = await client.chat.completions.create({
+        model,
+        messages,
+        response_format: { type: "json_object" },
+      });
+
+      const raw = completion.choices[0]?.message?.content || "";
+      const latency = Date.now() - start;
+      this.logger.debug(`模型调用完成，耗时 ${latency}ms`);
+
+      let data: T | null = null;
+      try {
+        data = JSON.parse(raw) as T;
+      } catch (parseErr) {
+        this.logger.warn(
+          `模型输出 JSON 解析失败: ${(parseErr as Error).message}`,
+        );
+      }
+
+      return {
+        data,
+        raw,
+        model,
+        usage: {
+          promptTokens: completion.usage?.prompt_tokens || 0,
+          completionTokens: completion.usage?.completion_tokens || 0,
+          totalTokens: completion.usage?.total_tokens || 0,
+        },
+      };
+    } catch (err) {
+      const _latency = Date.now() - start;
+      const message = (err as Error).message;
+      this.logger.error(
+        `模型调用失败: ${message} (耗时 ${_latency}ms)`,
+        (err as Error).stack,
+      );
+      return {
+        data: null,
+        raw: "",
+        model,
+        error: message,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
+  }
+
+  /**
+   * 使用 OpenAI 兼容 content blocks 生成结构化输出。
+   * 将文本 / image_url / video_url 作为 user message content 数组发送，
+   * 并附加 system message 携带 JSON Schema。
+   */
+  async generateStructuredWithContent<T>(
+    contentBlocks: ProcessedContent[],
+    schema: object,
+    options: {
+      modelName?: string;
+      config?: ModelConfig;
+    } = {},
+  ): Promise<StructuredResponse<T>> {
+    const config = this.resolveConfig(options.config);
+    const model = options.modelName?.trim() || config.model;
+    const client = this.createClient(config);
+
+    if (!client) {
+      return {
+        data: null,
+        raw: "",
+        model,
+        error: "AI 模型未配置",
+      };
+    }
+
+    const start = Date.now();
+    try {
+      this.logger.debug(
+        `调用模型生成结构化输出（content blocks），provider=${config.provider}, model=${model}, baseURL=${config.baseURL ?? "default"}, blocks=${contentBlocks.length}`,
+      );
+
+      const messages: ChatCompletionMessageParam[] = [
+        {
+          role: "system",
+          content: `你是一个严格的计划教练。请只输出符合以下 JSON Schema 的 JSON 对象，不要添加任何额外解释：\n${JSON.stringify(schema)}`,
+        },
+        {
+          role: "user",
+          content: contentBlocks as any,
+        },
+      ];
 
       const completion = await client.chat.completions.create({
         model,

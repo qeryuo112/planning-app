@@ -1,5 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ModelAdapter, ModelConfig } from "./model-adapter.service";
+import {
+  DocumentProcessor,
+  ProcessedContent,
+} from "./document-processor.service";
 import { AITemplate } from "./templates/ai-templates";
 
 export interface PlanGoal {
@@ -102,7 +106,10 @@ interface PlanConstraints {
 export class PlanOrchestrator {
   private readonly logger = new Logger(PlanOrchestrator.name);
 
-  constructor(private readonly modelAdapter: ModelAdapter) {}
+  constructor(
+    private readonly modelAdapter: ModelAdapter,
+    private readonly documentProcessor: DocumentProcessor,
+  ) {}
 
   /**
    * 根据用户输入生成计划草案。
@@ -260,6 +267,107 @@ export class PlanOrchestrator {
 
     this.logger.debug(`文件解析模型生成计划草案成功`);
     return { draft: normalized, fallback: false, usage: response.usage };
+  }
+
+  /**
+   * 根据已上传文件的 OSS URL 生成计划草案。
+   * 下载/转换文件为 OpenAI 兼容 content blocks，再调用模型生成结构化计划。
+   * 支持 master（总/月计划）和 weekly（周/日计划）两种 scope。
+   */
+  async generateDraftFromFileUrl(
+    fileUrl: string,
+    constraints?: Record<string, unknown>,
+    scope: "master" | "weekly" = "master",
+    parentGoalTitle?: string,
+    modelName?: string,
+    config?: ModelConfig,
+  ): Promise<{
+    draft: PlanDraftPayload;
+    fallback: boolean;
+    error?: string;
+    usage?: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+  }> {
+    this.logger.debug(
+      `编排文件 URL 导入计划草案，fileUrl: ${fileUrl.slice(0, 100)}, scope: ${scope}, 父目标: ${parentGoalTitle ?? "无"}, 模型: ${modelName ?? "默认"}`,
+    );
+
+    const planConstraints = this.normalizeConstraints(constraints);
+
+    const resolvedConfig = this.modelAdapter.getConfig(modelName);
+    const effectiveConfig = config ?? resolvedConfig;
+    if (!effectiveConfig.enabled) {
+      this.logger.warn(`AI 模型未启用，使用占位草案`);
+      return {
+        draft: this.buildFileFallbackDraft("", planConstraints, scope, parentGoalTitle),
+        fallback: true,
+        error: "AI 模型未配置",
+      };
+    }
+
+    try {
+      const contentBlocks = await this.documentProcessor.processUrlsToContentBlocks(
+        [fileUrl],
+        { modelName },
+      );
+
+      const promptText = this.buildFileUrlImportPrompt(
+        planConstraints,
+        scope,
+        parentGoalTitle,
+      );
+
+      const userContent: ProcessedContent[] = [
+        { type: "text", text: promptText },
+        ...contentBlocks,
+      ];
+
+      const schema = this.getPlanSchema(planConstraints);
+
+      const response =
+        await this.modelAdapter.generateStructuredWithContent<PlanDraftPayload>(
+          userContent,
+          schema,
+          { modelName, config },
+        );
+
+      if (response.error || !response.data) {
+        const reason = response.error ?? "返回数据为空";
+        this.logger.warn(`文件 URL 解析模型生成失败: ${reason}，降级到占位草案`);
+        return {
+          draft: this.buildFileFallbackDraft("", planConstraints, scope, parentGoalTitle),
+          fallback: true,
+          error: reason,
+          usage: response.usage,
+        };
+      }
+
+      const normalized = this.normalizeDraft(response.data, planConstraints);
+      if (!normalized) {
+        this.logger.warn(`文件 URL 解析模型输出校验失败，降级到占位草案`);
+        return {
+          draft: this.buildFileFallbackDraft("", planConstraints, scope, parentGoalTitle),
+          fallback: true,
+          error: "模型输出校验失败",
+          usage: response.usage,
+        };
+      }
+
+      this.logger.debug(`文件 URL 解析模型生成计划草案成功`);
+      return { draft: normalized, fallback: false, usage: response.usage };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`文件 URL 处理失败: ${message}`, (err as Error).stack);
+      return {
+        draft: this.buildFileFallbackDraft("", planConstraints, scope, parentGoalTitle),
+        fallback: true,
+        error: message,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
   }
 
   /**
@@ -956,6 +1064,54 @@ ${fileContent}
 ---
 ${fileContent}
 ---
+
+要求：
+1. 从文件中提取总体目标作为 goal.title；根据计划总时长判断 horizon（<=30 天 short，<=90 天 medium，>90 天 long）；startDate 为 ${today}；dueDate 根据文件推断，无法推断则填 ${planEnd}；successCriteria 提取 2-3 条。
+2. 根据文件中的阶段/月份/轮次生成 milestones（每个包含 title、dueDate、weight，权重总和为 1）。
+3. 如果当前阶段（第 1 阶段）有详细任务，生成 tasks（每个包含 title、date、durationMinutes、energyLevel、milestoneRef=m1/m2...、minimumStandard）。
+4. 如果文件提到需要日常坚持的行为，生成 habits（1-2 个）。
+5. planDuration 填 ${planDuration}，stageLength 填 ${stageLength}，currentStage 填 1，totalStages 填 ${totalStages}。
+6. stages 数组：每个阶段包含 stageNo、durationDays、startDate、endDate、milestones、tasks（仅当前阶段 isDetailed=true，其余 isDetailed=false）。
+7. assumptions 和 warnings 各 2-3 条。
+8. 未在文件中明确提到的内容不要编造。
+
+请只输出 JSON。`;
+  }
+
+  /**
+   * 与 buildFileImportPrompt 指令相同，但不嵌入文件内容。
+   * 文件内容会通过 content blocks（text / image_url / video_url）单独传递。
+   */
+  private buildFileUrlImportPrompt(
+    constraints: PlanConstraints,
+    scope: "master" | "weekly",
+    parentGoalTitle?: string,
+  ): string {
+    const today = new Date().toISOString().split("T")[0];
+    const planDuration = constraints.planDuration || 30;
+    const stageLength = constraints.stageLength || 7;
+    const planEnd = this.addDays(today, planDuration - 1);
+    const totalStages = this.computeStageCount(planDuration, stageLength);
+
+    if (scope === "weekly") {
+      return `你是一位严格的计划执行助手。请根据后续提供的文件内容（可能为文本、图片或文档截图），提取出具体可执行的任务列表，输出为严格 JSON。
+
+${parentGoalTitle ? `该计划属于已有目标：${parentGoalTitle}` : ""}
+
+要求：
+1. 从文件中识别每一天的安排，生成 tasks。每个任务包含 title、date（YYYY-MM-DD，必须根据文件中的星期/日期推断，若未明确则按从今天 ${today} 开始的顺序推算）、durationMinutes（默认 30-120）、energyLevel（high/medium/low，根据任务性质判断）、milestoneRef（统一填 m1）、minimumStandard（最低完成标准）。
+2. 如果文件提到习惯（如"每天背单词""早读"），生成 habits，包含 title、frequency（daily/weekly/weekdays）、preferredTime（HH:MM 或空）、energyLevel、minimumStandard。
+3. 生成一个与已有目标一致的 goal.title（${parentGoalTitle ?? "从文件中提取目标名称"}），horizon 填 short，startDate ${today}，dueDate ${planEnd}。
+4. planDuration 填 ${planDuration}，stageLength 填 ${stageLength}，currentStage 填 1，totalStages 填 1。
+5. stages 只包含一个阶段（stageNo=1, 起始 ${today}, 结束 ${planEnd}, isDetailed=true），其 tasks 与顶层 tasks 一致。
+6. milestones 生成 1 个总里程碑：{ title: "完成周计划", dueDate: "${planEnd}", weight: 1 }。
+7. assumptions 和 warnings 各 1-2 条。
+8. 未在文件中明确提到的内容不要编造，若文件内容不完整可返回空数组。
+
+请只输出 JSON。`;
+    }
+
+    return `你是一位严格的长期计划教练。请根据后续提供的文件内容（可能为文本、图片或文档截图），提取出一个长期目标、阶段里程碑和相关习惯，输出为严格 JSON。
 
 要求：
 1. 从文件中提取总体目标作为 goal.title；根据计划总时长判断 horizon（<=30 天 short，<=90 天 medium，>90 天 long）；startDate 为 ${today}；dueDate 根据文件推断，无法推断则填 ${planEnd}；successCriteria 提取 2-3 条。

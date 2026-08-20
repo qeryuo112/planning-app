@@ -25,6 +25,7 @@
     "prisma:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0",
     "@azure/msal-node": "^2.16.0",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",
@@ -33,6 +34,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
     "@nestjs/platform-socket.io": "^10.4.22",
+    "axios": "^1.7.9",
     "@nestjs/schedule": "^4.0.0",
     "@nestjs/swagger": "^7.1.17",
     "@nestjs/websockets": "^10.4.22",
